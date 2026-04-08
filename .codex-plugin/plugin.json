@@ -1,7 +1,7 @@
 {
   "name": "quarryfi-time-tracker",
-  "version": "0.1.0",
-  "description": "quarryFi R&D time tracking for OpenAI Codex — automated tax credit documentation",
+  "version": "0.2.0",
+  "description": "quarryFi R&D time tracking for OpenAI Codex — multi-company profiles with project routing and audit logging",
   "author": {
     "name": "Smashed Studios LLC",
     "url": "https://quarryfi.smashedstudiosllc.workers.dev"
@@ -14,10 +14,10 @@
   "interface": {
     "displayName": "quarryFi Time Tracker",
     "shortDescription": "Track R&D time in Codex for tax credit documentation",
-    "longDescription": "Automatically tracks coding sessions in Codex CLI and Codex App, sending heartbeats to your quarryFi account for R&D tax credit qualification analysis. Uses the same ~/.quarryfi/config.json as the Claude Code plugin.",
+    "longDescription": "Automatically tracks coding sessions in Codex CLI and Codex App. Supports multiple company profiles with project-to-key routing — freelancers can track R&D time for different clients from a single config. Includes local audit logging. Uses the same ~/.quarryfi/config.json as the Claude Code plugin.",
     "developerName": "Smashed Studios LLC",
     "category": "Productivity",
-    "capabilities": ["time-tracking", "session-monitoring"],
+    "capabilities": ["time-tracking", "session-monitoring", "multi-company", "audit-logging"],
     "websiteURL": "https://quarryfi.smashedstudiosllc.workers.dev",
     "privacyPolicyURL": "https://quarryfi.smashedstudiosllc.workers.dev/privacy",
     "defaultPrompt": [
