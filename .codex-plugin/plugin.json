@@ -1,0 +1,33 @@
+{
+  "name": "quarryfi-time-tracker",
+  "version": "0.1.0",
+  "description": "quarryFi R&D time tracking for OpenAI Codex — automated tax credit documentation",
+  "author": {
+    "name": "Smashed Studios LLC",
+    "url": "https://quarryfi.smashedstudiosllc.workers.dev"
+  },
+  "homepage": "https://github.com/quarryFi/codex-plugin",
+  "repository": "https://github.com/quarryFi/codex-plugin",
+  "license": "MIT",
+  "keywords": ["time-tracking", "r&d", "tax-credits", "quarryfi"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "quarryFi Time Tracker",
+    "shortDescription": "Track R&D time in Codex for tax credit documentation",
+    "longDescription": "Automatically tracks coding sessions in Codex CLI and Codex App, sending heartbeats to your quarryFi account for R&D tax credit qualification analysis. Uses the same ~/.quarryfi/config.json as the Claude Code plugin.",
+    "developerName": "Smashed Studios LLC",
+    "category": "Productivity",
+    "capabilities": ["time-tracking", "session-monitoring"],
+    "websiteURL": "https://quarryfi.smashedstudiosllc.workers.dev",
+    "privacyPolicyURL": "https://quarryfi.smashedstudiosllc.workers.dev/privacy",
+    "defaultPrompt": [
+      "Check my quarryFi R&D tracking status"
+    ]
+  },
+  "hooks": {
+    "SessionStart": "./hooks/track-session.sh",
+    "TaskStarted": "./hooks/track-session.sh",
+    "TaskComplete": "./hooks/track-session.sh",
+    "Stop": "./hooks/track-session.sh"
+  }
+}
