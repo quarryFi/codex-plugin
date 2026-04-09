@@ -6,20 +6,28 @@ Supports **multiple company profiles** with project-to-key routing — freelance
 
 ## Install
 
-### Codex App (macOS)
+The plugin folder name must match the `"name"` in `.codex-plugin/plugin.json`, which is `quarryfi-time-tracker`.
 
-1. Clone the plugin into Codex's local plugin directory:
+### Home-Local Install (Codex App / Codex CLI)
+
+Use this to make the plugin available across all your projects.
+
+1. Clone the plugin:
 
 ```bash
-mkdir -p ~/.codex/plugins
-git clone https://github.com/quarryFi/codex-plugin.git ~/.codex/plugins/quarryfi
+mkdir -p ~/plugins
+git clone https://github.com/quarryFi/codex-plugin.git ~/plugins/quarryfi-time-tracker
 ```
 
-2. Register it in your personal marketplace file:
+2. Register it in your personal marketplace:
 
 ```bash
 mkdir -p ~/.agents/plugins
-cat > ~/.agents/plugins/marketplace.json << 'EOF'
+```
+
+If `~/.agents/plugins/marketplace.json` **doesn't exist yet**, create it:
+
+```json
 {
   "name": "personal-plugins",
   "interface": {
@@ -30,7 +38,7 @@ cat > ~/.agents/plugins/marketplace.json << 'EOF'
       "name": "quarryfi-time-tracker",
       "source": {
         "source": "local",
-        "path": "./quarryfi"
+        "path": "./plugins/quarryfi-time-tracker"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -40,32 +48,54 @@ cat > ~/.agents/plugins/marketplace.json << 'EOF'
     }
   ]
 }
-EOF
 ```
 
-> **Note:** If you already have a `marketplace.json`, add the `quarryfi-time-tracker` entry to the existing `plugins` array rather than overwriting the file.
+> **Note:** The `source.path` is relative to the marketplace file's parent directory (`~/`). If you already have a `marketplace.json`, add the `quarryfi-time-tracker` entry to the existing `plugins` array.
 
-3. Open the Codex App — the plugin should appear in the plugin directory under "Personal Plugins".
+3. Restart the Codex App. The plugin should appear in the plugin directory under "Personal Plugins".
 
-### Codex CLI
+### Repo-Local Install
+
+To scope the plugin to a single project:
+
+1. Clone into your repo's plugin directory:
 
 ```bash
-mkdir -p ~/.codex/plugins
-git clone https://github.com/quarryFi/codex-plugin.git ~/.codex/plugins/quarryfi
+mkdir -p plugins
+git clone https://github.com/quarryFi/codex-plugin.git plugins/quarryfi-time-tracker
 ```
 
-Then register via `~/.agents/plugins/marketplace.json` (same as above) or reference it in your project's `.agents/plugins/marketplace.json` for repo-scoped use.
+2. Add a marketplace file at `<repo-root>/.agents/plugins/marketplace.json`:
 
-### Per-Project Install
-
-To scope the plugin to a single repo instead of installing globally:
-
-```bash
-mkdir -p .agents/plugins
-git clone https://github.com/quarryFi/codex-plugin.git .agents/plugins/quarryfi
+```json
+{
+  "name": "project-plugins",
+  "interface": {
+    "displayName": "Project Plugins"
+  },
+  "plugins": [
+    {
+      "name": "quarryfi-time-tracker",
+      "source": {
+        "source": "local",
+        "path": "./plugins/quarryfi-time-tracker"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
 ```
 
-Then add a `marketplace.json` at `.agents/plugins/marketplace.json` with the same structure as above.
+### Verify
+
+After installing, confirm two things:
+
+- Manifest exists at `<plugin-folder>/.codex-plugin/plugin.json`
+- A marketplace file includes an entry pointing to the plugin folder
 
 ## Configuration
 
