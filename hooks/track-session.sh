@@ -7,13 +7,30 @@
 # Sends heartbeats to POST /api/heartbeat for each matching profile.
 # Appends each heartbeat to ~/.quarryfi/audit.log (capped at 1MB).
 # All errors are silenced — tracking must never interrupt the user.
+#
+# Required heartbeat fields (all guaranteed non-null):
+#   source, project_name, language, file_type, branch,
+#   editor, timestamp, duration_seconds, session_id
 
 set -o pipefail
 
 CONFIG_FILE="$HOME/.quarryfi/config.json"
 AUDIT_LOG="$HOME/.quarryfi/audit.log"
 AUDIT_MAX_BYTES=1048576  # 1MB
-SESSION_FILE="/tmp/quarryfi-codex-session-$$"
+
+# ── Session file paths ───────────────────────────────────────────────────────
+# Use a stable path derived from the project directory, NOT $$ (PID).
+# Each hook invocation is a separate process — PID-based paths break across
+# SessionStart → TaskComplete because the PID changes every invocation.
+
+session_dir() {
+  local cwd
+  cwd=$(get_cwd)
+  local hash
+  # Stable hash of the project directory for unique-but-consistent filenames
+  hash=$(printf '%s' "$cwd" | shasum -a 256 2>/dev/null | cut -c1-12)
+  echo "/tmp/quarryfi-codex-${hash}"
+}
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -74,7 +91,7 @@ cwd_matches_profile() {
   return 1
 }
 
-# Detect legacy single-key config format and normalize to a profile block.
+# Detect legacy single-key config format.
 is_legacy_config() {
   grep -q '"profiles"' "$CONFIG_FILE" 2>/dev/null && return 1
   grep -q '"api_key"' "$CONFIG_FILE" 2>/dev/null && return 0
@@ -85,11 +102,20 @@ get_cwd() {
   echo "${CODEX_PROJECT_DIR:-${CODEX_CWD:-$(pwd)}}"
 }
 
+# ── Field resolvers (every field guaranteed non-null) ────────────────────────
+
 get_project_name() {
-  basename "$(get_cwd)"
+  local name
+  name=$(basename "$(get_cwd)")
+  # basename of "/" is empty; fall back to git repo name, then "unknown"
+  if [ -z "$name" ] || [ "$name" = "/" ]; then
+    name=$(git -C "$(get_cwd)" rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null)
+  fi
+  echo "${name:-unknown}"
 }
 
 get_editor() {
+  # Codex sets CODEX_CLIENT to identify CLI vs App
   case "${CODEX_CLIENT:-cli}" in
     app|desktop) echo "Codex App" ;;
     *)           echo "Codex CLI" ;;
@@ -97,19 +123,122 @@ get_editor() {
 }
 
 get_branch() {
-  git -C "$(get_cwd)" rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""
+  local branch
+  branch=$(git -C "$(get_cwd)" rev-parse --abbrev-ref HEAD 2>/dev/null)
+  echo "${branch:-unknown}"
 }
 
 get_language() {
   local dir
   dir=$(get_cwd)
-  if [ -f "$dir/package.json" ]; then echo "javascript"
-  elif [ -f "$dir/Cargo.toml" ]; then echo "rust"
-  elif [ -f "$dir/go.mod" ]; then echo "go"
-  elif [ -f "$dir/pyproject.toml" ] || [ -f "$dir/setup.py" ]; then echo "python"
-  elif [ -f "$dir/Gemfile" ]; then echo "ruby"
-  else echo ""
+
+  # 1. Check project marker files for primary language
+  if [ -f "$dir/package.json" ] || [ -f "$dir/tsconfig.json" ]; then
+    if [ -f "$dir/tsconfig.json" ]; then echo "typescript"; return; fi
+    echo "javascript"; return
   fi
+  if [ -f "$dir/Cargo.toml" ];    then echo "rust";       return; fi
+  if [ -f "$dir/go.mod" ];        then echo "go";         return; fi
+  if [ -f "$dir/pyproject.toml" ] || [ -f "$dir/setup.py" ] || [ -f "$dir/setup.cfg" ]; then
+    echo "python"; return
+  fi
+  if [ -f "$dir/Gemfile" ];        then echo "ruby";       return; fi
+  if [ -f "$dir/build.gradle" ] || [ -f "$dir/pom.xml" ]; then echo "java"; return; fi
+  if [ -f "$dir/mix.exs" ];        then echo "elixir";     return; fi
+  if [ -f "$dir/composer.json" ];   then echo "php";        return; fi
+  if [ -f "$dir/Package.swift" ];   then echo "swift";      return; fi
+  if [ -f "$dir/CMakeLists.txt" ] || [ -f "$dir/Makefile" ]; then echo "c/cpp"; return; fi
+
+  # 2. Check recent git changes for file extensions
+  local recent_ext
+  recent_ext=$(git -C "$dir" diff --name-only HEAD~3 HEAD 2>/dev/null | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
+  if [ -n "$recent_ext" ]; then
+    case "$recent_ext" in
+      ts|tsx)   echo "typescript"; return ;;
+      js|jsx)   echo "javascript"; return ;;
+      py)       echo "python";     return ;;
+      rs)       echo "rust";       return ;;
+      go)       echo "go";         return ;;
+      rb)       echo "ruby";       return ;;
+      java|kt)  echo "java";       return ;;
+      php)      echo "php";        return ;;
+      swift)    echo "swift";      return ;;
+      c|cpp|h)  echo "c/cpp";      return ;;
+      sh|bash)  echo "shell";      return ;;
+    esac
+  fi
+
+  # 3. Never null — default to "multi"
+  echo "multi"
+}
+
+get_file_type() {
+  local dir
+  dir=$(get_cwd)
+
+  # 1. Check recent git changes for the dominant file extension
+  local recent_ext
+  recent_ext=$(git -C "$dir" diff --name-only HEAD~3 HEAD 2>/dev/null | grep '\.' | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
+  if [ -n "$recent_ext" ]; then
+    # If there are multiple distinct extensions in recent changes, use "multi"
+    local ext_count
+    ext_count=$(git -C "$dir" diff --name-only HEAD~3 HEAD 2>/dev/null | grep '\.' | sed 's/.*\.//' | sort -u | wc -l | tr -d ' ')
+    if [ "$ext_count" -gt 3 ]; then
+      echo "multi"
+    else
+      echo "$recent_ext"
+    fi
+    return
+  fi
+
+  # 2. Check staged files
+  recent_ext=$(git -C "$dir" diff --cached --name-only 2>/dev/null | grep '\.' | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
+  if [ -n "$recent_ext" ]; then
+    echo "$recent_ext"
+    return
+  fi
+
+  # 3. Infer from language as last resort
+  local lang
+  lang=$(get_language)
+  case "$lang" in
+    typescript)  echo "ts" ;;
+    javascript)  echo "js" ;;
+    python)      echo "py" ;;
+    rust)        echo "rs" ;;
+    go)          echo "go" ;;
+    ruby)        echo "rb" ;;
+    java)        echo "java" ;;
+    php)         echo "php" ;;
+    swift)       echo "swift" ;;
+    c/cpp)       echo "cpp" ;;
+    shell)       echo "sh" ;;
+    *)           echo "multi" ;;
+  esac
+}
+
+get_session_id() {
+  local sf
+  sf=$(session_dir)
+
+  # 1. Prefer Codex-provided session ID
+  if [ -n "${CODEX_SESSION_ID:-}" ]; then
+    # Persist it so subsequent hooks without the env var can still read it
+    echo "$CODEX_SESSION_ID" > "${sf}.sid" 2>/dev/null || true
+    echo "$CODEX_SESSION_ID"
+    return
+  fi
+
+  # 2. Read previously persisted session ID
+  if [ -f "${sf}.sid" ]; then
+    cat "${sf}.sid"
+    return
+  fi
+
+  # 3. Generate a new one and persist it
+  local new_id="codex-$(date +%s)-${RANDOM:-0}"
+  echo "$new_id" > "${sf}.sid" 2>/dev/null || true
+  echo "$new_id"
 }
 
 timestamp_utc() {
@@ -123,7 +252,6 @@ rotate_audit_log() {
     local size
     size=$(wc -c < "$AUDIT_LOG" 2>/dev/null || echo 0)
     if [ "$size" -gt "$AUDIT_MAX_BYTES" ]; then
-      # Keep the last ~half of the file
       local lines
       lines=$(wc -l < "$AUDIT_LOG" 2>/dev/null || echo 0)
       local keep=$(( lines / 2 ))
@@ -140,7 +268,6 @@ append_audit() {
   local api_url="$3"
   local http_status="$4"
 
-  # Single-line JSON record
   local record
   record=$(printf '{"ts":"%s","profile":"%s","api_url":"%s","http_status":"%s","payload":%s}' \
     "$(timestamp_utc)" "$profile_name" "$api_url" "$http_status" "$payload")
@@ -156,9 +283,14 @@ build_payload() {
   local duration="$2"
   local now="$3"
   local session_id="$4"
+  local project_name="$5"
+  local editor="$6"
+  local branch="$7"
+  local language="$8"
+  local file_type="$9"
 
   cat <<EOF
-{"heartbeats":[{"source":"codex","project_name":"$(get_project_name)","editor":"$(get_editor)","timestamp":"${now}","session_id":"${session_id}","event":"${event}","duration_seconds":${duration},"branch":"$(get_branch)","language":"$(get_language)"}]}
+{"heartbeats":[{"source":"codex","project_name":"${project_name}","language":"${language}","file_type":"${file_type}","branch":"${branch}","editor":"${editor}","timestamp":"${now}","duration_seconds":${duration},"session_id":"${session_id}","event":"${event}"}]}
 EOF
 }
 
@@ -186,16 +318,29 @@ dispatch_to_profiles() {
   local event="$1"
   local duration="$2"
 
+  # Resolve all fields once (each guaranteed non-null)
   local now
   now=$(timestamp_utc)
-  local session_id="${CODEX_SESSION_ID:-$(cat "$SESSION_FILE" 2>/dev/null || echo "")}"
+  local session_id
+  session_id=$(get_session_id)
+  local project_name
+  project_name=$(get_project_name)
+  local editor
+  editor=$(get_editor)
+  local branch
+  branch=$(get_branch)
+  local language
+  language=$(get_language)
+  local file_type
+  file_type=$(get_file_type)
   local cwd
   cwd=$(get_cwd)
+
   local payload
-  payload=$(build_payload "$event" "$duration" "$now" "$session_id")
+  payload=$(build_payload "$event" "$duration" "$now" "$session_id" \
+    "$project_name" "$editor" "$branch" "$language" "$file_type")
 
   if is_legacy_config; then
-    # Legacy single-key format: treat as one catch-all profile
     local api_key api_url
     api_key=$(json_string "$(cat "$CONFIG_FILE")" "api_key")
     api_url=$(json_string "$(cat "$CONFIG_FILE")" "api_url")
@@ -205,11 +350,9 @@ dispatch_to_profiles() {
     return
   fi
 
-  # Multi-profile format: iterate profiles, send to each that matches cwd
   local config_content
   config_content=$(cat "$CONFIG_FILE")
 
-  # Extract each profile block and check for cwd match
   local profile_blocks
   profile_blocks=$(echo "$config_content" | extract_profiles)
 
@@ -231,7 +374,6 @@ dispatch_to_profiles() {
     fi
   done <<< "$profile_blocks"
 
-  # Wait for background curl processes
   if [ "$sent" -gt 0 ]; then
     wait 2>/dev/null || true
   fi
@@ -245,29 +387,34 @@ main() {
   fi
 
   local event="${1:-${CODEX_HOOK_EVENT:-unknown}}"
+  local sf
+  sf=$(session_dir)
 
   case "$event" in
     SessionStart|TaskStarted)
-      echo "$(date +%s)" > "$SESSION_FILE.start"
-      if [ -z "${CODEX_SESSION_ID:-}" ]; then
-        echo "codex-$(date +%s)-$$" > "$SESSION_FILE"
-      fi
+      # Record start timestamp in a stable location (not PID-based)
+      echo "$(date +%s)" > "${sf}.start"
+      # Ensure session ID is generated and persisted
+      get_session_id > /dev/null
       dispatch_to_profiles "$event" 0
       ;;
 
     TaskComplete|Stop)
+      # Calculate duration from stored start time
       local duration=0
-      if [ -f "$SESSION_FILE.start" ]; then
+      if [ -f "${sf}.start" ]; then
         local start_ts
-        start_ts=$(cat "$SESSION_FILE.start")
+        start_ts=$(cat "${sf}.start")
         local now_ts
         now_ts=$(date +%s)
         duration=$(( now_ts - start_ts ))
-        rm -f "$SESSION_FILE.start"
+        # Reset start time for next task (but keep session alive)
+        rm -f "${sf}.start"
       fi
       dispatch_to_profiles "$event" "$duration"
+      # Clean up all session files on full stop
       if [ "$event" = "Stop" ]; then
-        rm -f "$SESSION_FILE" "$SESSION_FILE.start"
+        rm -f "${sf}.start" "${sf}.sid"
       fi
       ;;
 
