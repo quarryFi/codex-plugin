@@ -6,18 +6,66 @@ Supports **multiple company profiles** with project-to-key routing — freelance
 
 ## Install
 
-### Option 1: Codex Plugin Directory
+### Codex App (macOS)
 
-Search for **quarryFi** in Codex's `/plugins` command and install directly.
-
-### Option 2: Manual
-
-Clone this repo and register it as a local plugin:
+1. Clone the plugin into Codex's local plugin directory:
 
 ```bash
-git clone https://github.com/quarryFi/codex-plugin.git
-# Then add the plugin path in Codex settings or via the plugin marketplace
+mkdir -p ~/.codex/plugins
+git clone https://github.com/quarryFi/codex-plugin.git ~/.codex/plugins/quarryfi
 ```
+
+2. Register it in your personal marketplace file:
+
+```bash
+mkdir -p ~/.agents/plugins
+cat > ~/.agents/plugins/marketplace.json << 'EOF'
+{
+  "name": "personal-plugins",
+  "interface": {
+    "displayName": "Personal Plugins"
+  },
+  "plugins": [
+    {
+      "name": "quarryfi-time-tracker",
+      "source": {
+        "source": "local",
+        "path": "./quarryfi"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
+EOF
+```
+
+> **Note:** If you already have a `marketplace.json`, add the `quarryfi-time-tracker` entry to the existing `plugins` array rather than overwriting the file.
+
+3. Open the Codex App — the plugin should appear in the plugin directory under "Personal Plugins".
+
+### Codex CLI
+
+```bash
+mkdir -p ~/.codex/plugins
+git clone https://github.com/quarryFi/codex-plugin.git ~/.codex/plugins/quarryfi
+```
+
+Then register via `~/.agents/plugins/marketplace.json` (same as above) or reference it in your project's `.agents/plugins/marketplace.json` for repo-scoped use.
+
+### Per-Project Install
+
+To scope the plugin to a single repo instead of installing globally:
+
+```bash
+mkdir -p .agents/plugins
+git clone https://github.com/quarryFi/codex-plugin.git .agents/plugins/quarryfi
+```
+
+Then add a `marketplace.json` at `.agents/plugins/marketplace.json` with the same structure as above.
 
 ## Configuration
 
