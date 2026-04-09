@@ -245,6 +245,28 @@ Check your tracking status from within Codex:
 
 Shows all configured profiles, matched projects, per-profile tracking stats, and audit log summary.
 
+### quarryfi-update
+
+Update the plugin to the latest version without leaving Codex:
+
+> "Update quarryFi plugin"
+
+Pulls the latest changes from GitHub, shows what changed, and reminds you to restart the Codex App. No need to open a terminal.
+
+## Updating
+
+There's no auto-update mechanism in the Codex plugin system yet. To update:
+
+**From inside Codex** (easiest): just ask "Update quarryFi plugin" — the `quarryfi-update` skill handles it.
+
+**From a terminal**:
+```bash
+cd ~/plugins/quarryfi-time-tracker
+git pull origin main
+```
+
+After either method, restart the Codex App to load the new version.
+
 ## Plugin Structure
 
 ```
@@ -254,8 +276,10 @@ codex-plugin/
 ├── hooks/
 │   └── track-session.sh     # Lifecycle event handler (multi-profile)
 ├── skills/
-│   └── quarryfi-status/
-│       └── SKILL.md          # Status check skill
+│   ├── quarryfi-status/
+│   │   └── SKILL.md          # Status check skill
+│   └── quarryfi-update/
+│       └── SKILL.md          # Self-update skill
 ├── setup.sh                  # Interactive profile setup
 └── README.md
 ```
