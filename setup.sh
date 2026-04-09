@@ -36,7 +36,7 @@ verify_key() {
   status=$(curl -s -o /dev/null -w "%{http_code}" \
     -H "Authorization: Bearer ${api_key}" \
     -H "Content-Type: application/json" \
-    -d '{"heartbeats":[{"source":"setup","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","duration_seconds":0}]}' \
+    -d '{"heartbeats":[{"source":"codex","project_name":"setup-verify","language":"multi","file_type":"multi","branch":"unknown","editor":"Codex CLI","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","duration_seconds":0,"session_id":"setup-'"$$"'"}]}' \
     "${api_url}/api/heartbeat" 2>/dev/null || echo "000")
 
   if [ "$status" = "200" ]; then
