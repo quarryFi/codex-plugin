@@ -6,9 +6,23 @@ Supports **multiple company profiles** with project-to-key routing — freelance
 
 ## Install
 
-The plugin folder name must match the `"name"` in `.codex-plugin/plugin.json`, which is `quarryfi-time-tracker`.
+### From the Codex App
 
-### Home-Local Install (Codex App / Codex CLI)
+1. Open the **Plugin Directory** (sidebar or settings)
+2. Switch the marketplace source to **Personal Plugins** (if you've registered the plugin locally — see below) or search for **quarryfi**
+3. Find **quarryFi Time Tracker** and click **Add to Codex**
+4. If prompted to authenticate, enter your quarryFi API key (get one from your [dashboard](https://quarryfi.smashedstudiosllc.workers.dev/dashboard))
+5. The plugin is active immediately — bundled skills and hooks start working as soon as it's installed
+
+You can enable/disable the plugin at any time from the plugin directory. Codex stores your preference in `~/.codex/config.toml`.
+
+> **First time?** The plugin needs to be registered in a marketplace before it appears in the app. Follow the Home-Local or Repo-Local setup below to make it discoverable, then use the app flow above to install it.
+
+---
+
+### Home-Local Setup (Codex App / Codex CLI)
+
+The plugin folder name must match the `"name"` in `.codex-plugin/plugin.json`, which is `quarryfi-time-tracker`.
 
 Use this to make the plugin available across all your projects.
 
