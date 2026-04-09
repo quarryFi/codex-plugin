@@ -113,36 +113,88 @@ After installing, confirm two things:
 
 ## Configuration
 
-If you already have quarryFi configured (from the Claude Code plugin or VS Code extension), **you're done** — this plugin reads the same config file. Skip to [What It Tracks](#what-it-tracks).
+This plugin shares `~/.quarryfi/config.json` with the Claude Code plugin. If you use both tools, you only need to configure once.
 
-### First-time setup
-
-Your team admin generates an API key for you from the [quarryFi dashboard](https://quarryfi.smashedstudiosllc.workers.dev/dashboard). Once you have your key:
-
-**Option A — Run the setup script:**
+### Quick Setup
 
 ```bash
-~/plugins/quarryfi-time-tracker/setup.sh
+curl -fsSL https://raw.githubusercontent.com/quarryFi/codex-plugin/main/setup.sh | bash
 ```
 
-**Option B — Create the config file manually:**
+The setup wizard walks you through creating profiles interactively. You'll need your API key from your [quarryFi dashboard](https://quarryfi.smashedstudiosllc.workers.dev/dashboard).
 
-```bash
-mkdir -p ~/.quarryfi
-cat > ~/.quarryfi/config.json << 'EOF'
+### Config Format
+
+```json
 {
-  "api_key": "qf_paste_your_key_here",
+  "profiles": [
+    {
+      "name": "Acme Corp",
+      "api_key": "qf_...",
+      "api_url": "https://quarryfi.smashedstudiosllc.workers.dev",
+      "projects": ["/Users/me/work/acme-api", "/Users/me/work/acme-frontend"]
+    },
+    {
+      "name": "Personal",
+      "api_key": "qf_...",
+      "api_url": "https://quarryfi.smashedstudiosllc.workers.dev",
+      "projects": []
+    }
+  ]
+}
+```
+
+Each profile maps an API key to specific project directories. When a hook fires, the script matches the current working directory against profiles and sends heartbeats to all matching endpoints.
+
+### Multi-Company Setup
+
+If you work for multiple companies, each with their own quarryFi account:
+
+1. Run `setup.sh` and create a profile for each company
+2. Add the project directories you work on for each company
+3. Leave `"projects": []` on one profile to use it as a catch-all for unmapped directories
+
+**How routing works:**
+
+- The plugin checks your current working directory against each profile's `projects` list
+- Match is **prefix-based** — `/Users/me/work/acme` matches `/Users/me/work/acme-api/src/`
+- A heartbeat is sent to **every** matching profile (a directory can match multiple profiles)
+- If no profiles match, the heartbeat is silently skipped
+- Profiles with an empty `projects` array match all directories (catch-all)
+
+**Example:** A freelancer working for Acme Corp and Beta Inc:
+
+```json
+{
+  "profiles": [
+    {
+      "name": "Acme Corp",
+      "api_key": "qf_acme_key_here",
+      "api_url": "https://quarryfi.smashedstudiosllc.workers.dev",
+      "projects": ["/Users/me/clients/acme"]
+    },
+    {
+      "name": "Beta Inc",
+      "api_key": "qf_beta_key_here",
+      "api_url": "https://quarryfi.smashedstudiosllc.workers.dev",
+      "projects": ["/Users/me/clients/beta"]
+    }
+  ]
+}
+```
+
+### Backward Compatibility
+
+The old single-key format is still supported:
+
+```json
+{
+  "api_key": "qf_...",
   "api_url": "https://quarryfi.smashedstudiosllc.workers.dev"
 }
-EOF
-chmod 600 ~/.quarryfi/config.json
 ```
 
-Replace `qf_paste_your_key_here` with the key your admin gave you. That's it.
-
-### Multiple companies
-
-Freelancers or contractors working across multiple quarryFi accounts can use the multi-profile config format. See the [Claude Code plugin docs](https://github.com/quarryFi/claude-code-plugin#configuration) for details — the config is identical across all quarryFi plugins.
+When detected, it's treated as one profile that matches all projects. Running `setup.sh` will offer to migrate it to the multi-profile format.
 
 ## What It Tracks
 
