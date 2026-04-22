@@ -350,6 +350,46 @@ dispatch_to_profiles() {
     return
   fi
 
+  if command -v node >/dev/null 2>&1; then
+    local matched_profiles
+    matched_profiles=$(node - "$CONFIG_FILE" "$cwd" <<'NODE' 2>/dev/null
+const fs = require("fs");
+const [file, cwd] = process.argv.slice(2);
+const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
+const profiles = Array.isArray(cfg.profiles) ? cfg.profiles : [cfg];
+const normalizedCwd = String(cwd || "");
+
+function matchesProject(project) {
+  const prefix = String(project || "").replace(/\/+$/, "");
+  return !prefix || normalizedCwd === prefix || normalizedCwd.startsWith(`${prefix}/`);
+}
+
+for (const profile of profiles) {
+  if (!profile || !profile.api_key) continue;
+  const projects = Array.isArray(profile.projects) ? profile.projects.filter(Boolean) : [];
+  if (projects.length > 0 && !projects.some(matchesProject)) continue;
+  console.log([
+    profile.name || "unnamed",
+    profile.api_key,
+    profile.api_url || "https://quarryfi.smashedstudiosllc.workers.dev",
+  ].join("\t"));
+}
+NODE
+)
+
+    local sent=0
+    while IFS=$'\t' read -r profile_name api_key api_url; do
+      [ -z "$api_key" ] && continue
+      send_heartbeat_to_profile "$api_key" "$api_url" "$profile_name" "$payload" &
+      sent=$((sent + 1))
+    done <<< "$matched_profiles"
+
+    if [ "$sent" -gt 0 ]; then
+      wait 2>/dev/null || true
+    fi
+    return
+  fi
+
   local config_content
   config_content=$(cat "$CONFIG_FILE")
 
@@ -408,6 +448,11 @@ main() {
         local now_ts
         now_ts=$(date +%s)
         duration=$(( now_ts - start_ts ))
+        if [ "$duration" -lt 0 ] 2>/dev/null; then
+          duration=0
+        elif [ "$duration" -gt 86400 ] 2>/dev/null; then
+          duration=86400
+        fi
         # Reset start time for next task (but keep session alive)
         rm -f "${sf}.start"
       fi
