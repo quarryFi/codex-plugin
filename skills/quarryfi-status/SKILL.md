@@ -3,7 +3,7 @@ name: quarryfi-status
 description: Check quarryFi R&D tracking status across all configured company profiles
 ---
 
-Show the user's quarryFi R&D tracking status across all configured profiles.
+Show the user's QuarryFi tracking status across all configured profiles.
 
 ## What to do
 
@@ -27,18 +27,22 @@ Show the user's quarryFi R&D tracking status across all configured profiles.
    curl -s -H "Authorization: Bearer $API_KEY" "$API_URL/api/status"
    ```
 
-5. Display results per profile:
-   - Today's tracked R&D time
-   - Current week total
-   - Active projects
+5. If the API responds successfully, display per profile:
+   - Last heartbeat timestamp
+   - Last 24 hours tracked minutes
+   - Last 7 days tracked minutes
+   - Active projects from the last 7 days
    - Recent sessions
 
-6. Show audit log summary:
+6. If the API request fails, fall back to the local audit log instead of stopping.
+
+7. Show audit log summary:
    - Check if `~/.quarryfi/audit.log` exists
    - Show the count of recent entries and last heartbeat timestamp
    - If the user asks for details, show the last 10 lines of the audit log
 
-7. If any API returns an error, show the HTTP status and suggest verifying the API key.
+8. If any API returns an error, show the HTTP status and suggest verifying the API key.
+9. Tell the user the dashboard remains the source of truth for deduped activity blocks and qualification review.
 
 ## Response format
 
@@ -66,4 +70,4 @@ Audit log: 142 entries, last heartbeat 2 min ago
 Source: Codex CLI
 ```
 
-Adapt based on actual API response fields. Keep it concise.
+Adapt based on actual API response fields. Keep it concise. If the API is unavailable, use the audit log plus the current directory/profile match as the fallback status.

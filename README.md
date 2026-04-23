@@ -15,6 +15,7 @@ Supports **multiple company profiles** with project-to-key routing — freelance
 5. The plugin is active immediately — bundled skills and hooks start working as soon as it's installed
 
 You can enable/disable the plugin at any time from the plugin directory. Codex stores your preference in `~/.codex/config.toml`.
+Installing from Personal Plugins does not mean Codex will auto-pull future GitHub changes. If the plugin lives in a local clone, that local clone still needs to be updated.
 
 > **First time?** The plugin needs to be registered in a marketplace before it appears in the app. Follow the Home-Local or Repo-Local setup below to make it discoverable, then use the app flow above to install it.
 
@@ -243,7 +244,7 @@ Check your tracking status from within Codex:
 
 > "Check my quarryFi R&D tracking status"
 
-Shows all configured profiles, matched projects, per-profile tracking stats, and audit log summary.
+Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, and audit log summary.
 
 ### quarryfi-update
 
@@ -255,17 +256,20 @@ Pulls the latest changes from GitHub, shows what changed, and reminds you to res
 
 ## Updating
 
-There's no auto-update mechanism in the Codex plugin system yet. To update:
+There's no auto-update mechanism in the Codex plugin system yet for local personal plugins. To update:
 
 **From inside Codex** (easiest): just ask "Update quarryFi plugin" — the `quarryfi-update` skill handles it.
 
 **From a terminal**:
 ```bash
 cd ~/plugins/quarryfi-time-tracker
+git fetch origin
 git pull origin main
 ```
 
 After either method, restart the Codex App to load the new version.
+
+If you installed the plugin from a repo-local `plugins/quarryfi-time-tracker` folder instead of `~/plugins`, update that clone instead.
 
 ## Plugin Structure
 
