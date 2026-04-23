@@ -1,9 +1,9 @@
 ---
 name: quarryfi-update
-description: Update the quarryFi plugin to the latest version from GitHub
+description: Refresh the local quarryFi plugin install from GitHub
 ---
 
-Update the quarryFi time tracking plugin by pulling the latest changes from GitHub.
+Refresh the local quarryFi time tracking plugin install by pulling the latest changes from GitHub into the folder Codex is currently using.
 
 ## What to do
 
@@ -61,3 +61,4 @@ Update the quarryFi time tracking plugin by pulling the latest changes from GitH
 - If the directory exists but is not a git repo, tell the user to re-clone.
 - If there's no network, say the update check failed and to try again later.
 - Never delete or overwrite the user's `~/.quarryfi/config.json` — that's separate from the plugin code.
+- Be explicit that this updates the local plugin folder on disk; the current Codex session may still need a restart before the new version is active.
