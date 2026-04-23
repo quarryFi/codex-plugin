@@ -11,6 +11,7 @@
   "license": "MIT",
   "keywords": ["time-tracking", "r&d", "tax-credits", "quarryfi"],
   "skills": "./skills/",
+  "hooks": "./hooks.json",
   "interface": {
     "displayName": "quarryFi Time Tracker",
     "shortDescription": "Track R&D time in Codex for tax credit documentation",
@@ -20,14 +21,9 @@
     "capabilities": ["time-tracking", "session-monitoring", "multi-company", "audit-logging"],
     "websiteURL": "https://quarryfi.smashedstudiosllc.workers.dev",
     "privacyPolicyURL": "https://quarryfi.smashedstudiosllc.workers.dev/privacy",
+    "termsOfServiceURL": "https://quarryfi.smashedstudiosllc.workers.dev/terms",
     "defaultPrompt": [
       "Check my quarryFi R&D tracking status"
     ]
-  },
-  "hooks": {
-    "SessionStart": "./hooks/track-session.sh",
-    "TaskStarted": "./hooks/track-session.sh",
-    "TaskComplete": "./hooks/track-session.sh",
-    "Stop": "./hooks/track-session.sh"
   }
 }

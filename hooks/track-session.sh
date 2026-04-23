@@ -17,6 +17,7 @@ set -o pipefail
 CONFIG_FILE="$HOME/.quarryfi/config.json"
 AUDIT_LOG="$HOME/.quarryfi/audit.log"
 AUDIT_MAX_BYTES=1048576  # 1MB
+EVENT_JSON=$(cat 2>/dev/null || true)
 
 # ── Session file paths ───────────────────────────────────────────────────────
 # Use a stable path derived from the project directory, NOT $$ (PID).
@@ -39,6 +40,11 @@ session_dir() {
 json_string() {
   printf '%s' "$1" | grep -o "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*:[[:space:]]*"\(.*\)"/\1/'
 }
+
+EVENT_NAME_FROM_JSON=$(json_string "$EVENT_JSON" "hook_event_name")
+EVENT_CWD_FROM_JSON=$(json_string "$EVENT_JSON" "cwd")
+EVENT_SESSION_ID_FROM_JSON=$(json_string "$EVENT_JSON" "session_id")
+EVENT_FILE_PATH_FROM_JSON=$(json_string "$EVENT_JSON" "file_path")
 
 # Extract the "profiles" array entries as individual JSON objects.
 # Each object is delimited by { … } inside the array.
@@ -99,6 +105,10 @@ is_legacy_config() {
 }
 
 get_cwd() {
+  if [ -n "$EVENT_CWD_FROM_JSON" ]; then
+    echo "$EVENT_CWD_FROM_JSON"
+    return
+  fi
   echo "${CODEX_PROJECT_DIR:-${CODEX_CWD:-$(pwd)}}"
 }
 
@@ -131,6 +141,28 @@ get_branch() {
 get_language() {
   local dir
   dir=$(get_cwd)
+
+  if [ -n "$EVENT_FILE_PATH_FROM_JSON" ]; then
+    local ext
+    ext="${EVENT_FILE_PATH_FROM_JSON##*.}"
+    if [ -n "$ext" ] && [ "$ext" != "$EVENT_FILE_PATH_FROM_JSON" ]; then
+      case "$ext" in
+        ts|tsx)   echo "typescript"; return ;;
+        js|jsx)   echo "javascript"; return ;;
+        py)       echo "python"; return ;;
+        rs)       echo "rust"; return ;;
+        go)       echo "go"; return ;;
+        rb)       echo "ruby"; return ;;
+        java|kt)  echo "java"; return ;;
+        php)      echo "php"; return ;;
+        swift)    echo "swift"; return ;;
+        c|cpp|h)  echo "c/cpp"; return ;;
+        sh|bash|zsh) echo "shell"; return ;;
+        json)     echo "json"; return ;;
+        md|markdown) echo "markdown"; return ;;
+      esac
+    fi
+  fi
 
   # 1. Check project marker files for primary language
   if [ -f "$dir/package.json" ] || [ -f "$dir/tsconfig.json" ]; then
@@ -175,6 +207,15 @@ get_language() {
 get_file_type() {
   local dir
   dir=$(get_cwd)
+
+  if [ -n "$EVENT_FILE_PATH_FROM_JSON" ]; then
+    local event_ext
+    event_ext="${EVENT_FILE_PATH_FROM_JSON##*.}"
+    if [ -n "$event_ext" ] && [ "$event_ext" != "$EVENT_FILE_PATH_FROM_JSON" ]; then
+      echo "$event_ext"
+      return
+    fi
+  fi
 
   # 1. Check recent git changes for the dominant file extension
   local recent_ext
@@ -221,7 +262,14 @@ get_session_id() {
   local sf
   sf=$(session_dir)
 
-  # 1. Prefer Codex-provided session ID
+  # 1. Prefer hook payload session ID
+  if [ -n "$EVENT_SESSION_ID_FROM_JSON" ]; then
+    echo "$EVENT_SESSION_ID_FROM_JSON" > "${sf}.sid" 2>/dev/null || true
+    echo "$EVENT_SESSION_ID_FROM_JSON"
+    return
+  fi
+
+  # 2. Prefer Codex-provided session ID
   if [ -n "${CODEX_SESSION_ID:-}" ]; then
     # Persist it so subsequent hooks without the env var can still read it
     echo "$CODEX_SESSION_ID" > "${sf}.sid" 2>/dev/null || true
@@ -229,13 +277,13 @@ get_session_id() {
     return
   fi
 
-  # 2. Read previously persisted session ID
+  # 3. Read previously persisted session ID
   if [ -f "${sf}.sid" ]; then
     cat "${sf}.sid"
     return
   fi
 
-  # 3. Generate a new one and persist it
+  # 4. Generate a new one and persist it
   local new_id="codex-$(date +%s)-${RANDOM:-0}"
   echo "$new_id" > "${sf}.sid" 2>/dev/null || true
   echo "$new_id"
@@ -271,6 +319,18 @@ append_audit() {
   local record
   record=$(printf '{"ts":"%s","profile":"%s","api_url":"%s","http_status":"%s","payload":%s}' \
     "$(timestamp_utc)" "$profile_name" "$api_url" "$http_status" "$payload")
+
+  rotate_audit_log
+  echo "$record" >> "$AUDIT_LOG" 2>/dev/null || true
+}
+
+append_status_audit() {
+  local project_name="$1"
+  local event_name="$2"
+  local status="$3"
+  local record
+  record=$(printf '{"ts":"%s","project":"%s","event":"%s","status":"%s"}' \
+    "$(timestamp_utc)" "$project_name" "$event_name" "$status")
 
   rotate_audit_log
   echo "$record" >> "$AUDIT_LOG" 2>/dev/null || true
@@ -346,6 +406,8 @@ dispatch_to_profiles() {
     api_url=$(json_string "$(cat "$CONFIG_FILE")" "api_url")
     if [ -n "$api_key" ] && [ -n "$api_url" ]; then
       send_heartbeat_to_profile "$api_key" "$api_url" "default" "$payload"
+    else
+      append_status_audit "$project_name" "$event" "skipped:missing_credentials"
     fi
     return
   fi
@@ -386,6 +448,8 @@ NODE
 
     if [ "$sent" -gt 0 ]; then
       wait 2>/dev/null || true
+    else
+      append_status_audit "$project_name" "$event" "skipped:no_matching_profile"
     fi
     return
   fi
@@ -416,7 +480,42 @@ NODE
 
   if [ "$sent" -gt 0 ]; then
     wait 2>/dev/null || true
+  else
+    append_status_audit "$project_name" "$event" "skipped:no_matching_profile"
   fi
+}
+
+clamp_duration() {
+  local duration="$1"
+  if [ "$duration" -lt 0 ] 2>/dev/null; then
+    echo 0
+  elif [ "$duration" -gt 86400 ] 2>/dev/null; then
+    echo 86400
+  else
+    echo "$duration"
+  fi
+}
+
+duration_since_last_event() {
+  local sf="$1"
+  local now_ts="$2"
+  local duration=0
+
+  if [ -f "${sf}.last" ]; then
+    local last_ts
+    last_ts=$(cat "${sf}.last" 2>/dev/null)
+    if [ -n "$last_ts" ]; then
+      duration=$(( now_ts - last_ts ))
+    fi
+  fi
+
+  clamp_duration "$duration"
+}
+
+record_last_event() {
+  local sf="$1"
+  local now_ts="$2"
+  echo "$now_ts" > "${sf}.last" 2>/dev/null || true
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -426,45 +525,30 @@ main() {
     exit 0
   fi
 
-  local event="${1:-${CODEX_HOOK_EVENT:-unknown}}"
+  local event="${1:-${CODEX_HOOK_EVENT:-${EVENT_NAME_FROM_JSON:-unknown}}}"
   local sf
   sf=$(session_dir)
+  local now_ts
+  now_ts=$(date +%s 2>/dev/null || echo 0)
+  local duration=0
 
   case "$event" in
-    SessionStart|TaskStarted)
-      # Record start timestamp in a stable location (not PID-based)
-      echo "$(date +%s)" > "${sf}.start"
-      # Ensure session ID is generated and persisted
+    SessionStart)
       get_session_id > /dev/null
+      record_last_event "$sf" "$now_ts"
       dispatch_to_profiles "$event" 0
       ;;
 
-    TaskComplete|Stop)
-      # Calculate duration from stored start time
-      local duration=0
-      if [ -f "${sf}.start" ]; then
-        local start_ts
-        start_ts=$(cat "${sf}.start")
-        local now_ts
-        now_ts=$(date +%s)
-        duration=$(( now_ts - start_ts ))
-        if [ "$duration" -lt 0 ] 2>/dev/null; then
-          duration=0
-        elif [ "$duration" -gt 86400 ] 2>/dev/null; then
-          duration=86400
-        fi
-        # Reset start time for next task (but keep session alive)
-        rm -f "${sf}.start"
-      fi
+    Stop)
+      duration=$(duration_since_last_event "$sf" "$now_ts")
       dispatch_to_profiles "$event" "$duration"
-      # Clean up all session files on full stop
-      if [ "$event" = "Stop" ]; then
-        rm -f "${sf}.start" "${sf}.sid"
-      fi
+      rm -f "${sf}.last" "${sf}.sid"
       ;;
 
     *)
-      dispatch_to_profiles "$event" 0
+      duration=$(duration_since_last_event "$sf" "$now_ts")
+      dispatch_to_profiles "$event" "$duration"
+      record_last_event "$sf" "$now_ts"
       ;;
   esac
 }
