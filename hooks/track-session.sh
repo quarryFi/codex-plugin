@@ -1,42 +1,27 @@
 #!/usr/bin/env bash
 # quarryFi session tracker for OpenAI Codex
-# Called by Codex on lifecycle events: SessionStart, TaskStarted, TaskComplete, Stop
 #
-# Supports multi-profile config with project-to-key routing.
-# Reads profiles from ~/.quarryfi/config.json
-# Sends heartbeats to POST /api/heartbeat for each matching profile.
-# Appends each heartbeat to ~/.quarryfi/audit.log (capped at 1MB).
-# All errors are silenced — tracking must never interrupt the user.
-#
-# Required heartbeat fields (all guaranteed non-null):
-#   source, project_name, language, file_type, branch,
-#   editor, timestamp, duration_seconds, session_id
+# Accuracy-first design:
+# - Event hooks still flush immediately on real Codex activity
+# - A background timer sends active-session heartbeats every 60s
+# - All senders share one "last sent" clock to avoid double-counting
+# - Failures are silenced so tracking never interrupts Codex
 
 set -o pipefail
 
-CONFIG_FILE="$HOME/.quarryfi/config.json"
-AUDIT_LOG="$HOME/.quarryfi/audit.log"
-AUDIT_MAX_BYTES=1048576  # 1MB
+CONFIG_DIR="$HOME/.quarryfi"
+CONFIG_FILE="$CONFIG_DIR/config.json"
+AUDIT_LOG="$CONFIG_DIR/audit.log"
+AUDIT_MAX_BYTES=1048576
+DEFAULT_API_URL="https://quarryfi.smashedstudiosllc.workers.dev"
+HEARTBEAT_INTERVAL_SECONDS=60
+MIN_TICK_DURATION_SECONDS=45
+
+CLI_EVENT="${1:-}"
+CLI_CWD="${2:-}"
+CLI_SESSION_ID="${3:-}"
 EVENT_JSON=$(cat 2>/dev/null || true)
 
-# ── Session file paths ───────────────────────────────────────────────────────
-# Use a stable path derived from the project directory, NOT $$ (PID).
-# Each hook invocation is a separate process — PID-based paths break across
-# SessionStart → TaskComplete because the PID changes every invocation.
-
-session_dir() {
-  local cwd
-  cwd=$(get_cwd)
-  local hash
-  # Stable hash of the project directory for unique-but-consistent filenames
-  hash=$(printf '%s' "$cwd" | shasum -a 256 2>/dev/null | cut -c1-12)
-  echo "/tmp/quarryfi-codex-${hash}"
-}
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
-# Portable JSON string extraction (no jq dependency).
-# Usage: json_string "$json" "field_name"
 json_string() {
   printf '%s' "$1" | grep -o "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*:[[:space:]]*"\(.*\)"/\1/'
 }
@@ -46,65 +31,11 @@ EVENT_CWD_FROM_JSON=$(json_string "$EVENT_JSON" "cwd")
 EVENT_SESSION_ID_FROM_JSON=$(json_string "$EVENT_JSON" "session_id")
 EVENT_FILE_PATH_FROM_JSON=$(json_string "$EVENT_JSON" "file_path")
 
-# Extract the "profiles" array entries as individual JSON objects.
-# Each object is delimited by { … } inside the array.
-# Usage: extract_profiles < config.json
-extract_profiles() {
-  awk '
-    BEGIN { depth=0; capture=0; buf="" }
-    /"profiles"/ { capture=1 }
-    capture && /{/ {
-      depth++
-      if (depth >= 1) buf=""
-    }
-    capture && depth >= 1 { buf = buf $0 "\n" }
-    capture && /}/ {
-      depth--
-      if (depth == 0) { print buf; buf="" }
-    }
-  '
-}
-
-# Extract the "projects" array values from a profile JSON block.
-# Returns one path per line.
-extract_projects() {
-  printf '%s' "$1" | grep -o '"projects"[[:space:]]*:[[:space:]]*\[[^]]*\]' | \
-    grep -o '"[^"]*"' | sed 's/"//g' | grep -v '^projects$'
-}
-
-# Check if cwd matches any project prefix in a profile.
-# Returns 0 (match) or 1 (no match).
-# If the profile has no "projects" key, it matches everything (legacy compat).
-cwd_matches_profile() {
-  local profile_block="$1"
-  local cwd="$2"
-
-  local projects
-  projects=$(extract_projects "$profile_block")
-
-  # No projects list → matches all (legacy single-key or catch-all profile)
-  if [ -z "$projects" ]; then
-    return 0
-  fi
-
-  while IFS= read -r prefix; do
-    [ -z "$prefix" ] && continue
-    case "$cwd" in
-      "${prefix}"*) return 0 ;;
-    esac
-  done <<< "$projects"
-
-  return 1
-}
-
-# Detect legacy single-key config format.
-is_legacy_config() {
-  grep -q '"profiles"' "$CONFIG_FILE" 2>/dev/null && return 1
-  grep -q '"api_key"' "$CONFIG_FILE" 2>/dev/null && return 0
-  return 1
-}
-
 get_cwd() {
+  if [ -n "$CLI_CWD" ]; then
+    echo "$CLI_CWD"
+    return
+  fi
   if [ -n "$EVENT_CWD_FROM_JSON" ]; then
     echo "$EVENT_CWD_FROM_JSON"
     return
@@ -112,197 +43,125 @@ get_cwd() {
   echo "${CODEX_PROJECT_DIR:-${CODEX_CWD:-$(pwd)}}"
 }
 
-# ── Field resolvers (every field guaranteed non-null) ────────────────────────
-
-get_project_name() {
-  local name
-  name=$(basename "$(get_cwd)")
-  # basename of "/" is empty; fall back to git repo name, then "unknown"
-  if [ -z "$name" ] || [ "$name" = "/" ]; then
-    name=$(git -C "$(get_cwd)" rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null)
-  fi
-  echo "${name:-unknown}"
+session_dir() {
+  local cwd="$1"
+  local hash
+  hash=$(printf '%s' "$cwd" | shasum -a 256 2>/dev/null | cut -c1-12)
+  echo "$CONFIG_DIR/session-codex-${hash}"
 }
 
-get_editor() {
-  # Codex sets CODEX_CLIENT to identify CLI vs App
-  case "${CODEX_CLIENT:-cli}" in
-    app|desktop) echo "Codex App" ;;
-    *)           echo "Codex CLI" ;;
-  esac
+session_file() {
+  local cwd="$1"
+  local name="$2"
+  echo "$(session_dir "$cwd")/$name"
 }
 
-get_branch() {
-  local branch
-  branch=$(git -C "$(get_cwd)" rev-parse --abbrev-ref HEAD 2>/dev/null)
-  echo "${branch:-unknown}"
-}
-
-get_language() {
-  local dir
-  dir=$(get_cwd)
-
-  if [ -n "$EVENT_FILE_PATH_FROM_JSON" ]; then
-    local ext
-    ext="${EVENT_FILE_PATH_FROM_JSON##*.}"
-    if [ -n "$ext" ] && [ "$ext" != "$EVENT_FILE_PATH_FROM_JSON" ]; then
-      case "$ext" in
-        ts|tsx)   echo "typescript"; return ;;
-        js|jsx)   echo "javascript"; return ;;
-        py)       echo "python"; return ;;
-        rs)       echo "rust"; return ;;
-        go)       echo "go"; return ;;
-        rb)       echo "ruby"; return ;;
-        java|kt)  echo "java"; return ;;
-        php)      echo "php"; return ;;
-        swift)    echo "swift"; return ;;
-        c|cpp|h)  echo "c/cpp"; return ;;
-        sh|bash|zsh) echo "shell"; return ;;
-        json)     echo "json"; return ;;
-        md|markdown) echo "markdown"; return ;;
-      esac
-    fi
-  fi
-
-  # 1. Check project marker files for primary language
-  if [ -f "$dir/package.json" ] || [ -f "$dir/tsconfig.json" ]; then
-    if [ -f "$dir/tsconfig.json" ]; then echo "typescript"; return; fi
-    echo "javascript"; return
-  fi
-  if [ -f "$dir/Cargo.toml" ];    then echo "rust";       return; fi
-  if [ -f "$dir/go.mod" ];        then echo "go";         return; fi
-  if [ -f "$dir/pyproject.toml" ] || [ -f "$dir/setup.py" ] || [ -f "$dir/setup.cfg" ]; then
-    echo "python"; return
-  fi
-  if [ -f "$dir/Gemfile" ];        then echo "ruby";       return; fi
-  if [ -f "$dir/build.gradle" ] || [ -f "$dir/pom.xml" ]; then echo "java"; return; fi
-  if [ -f "$dir/mix.exs" ];        then echo "elixir";     return; fi
-  if [ -f "$dir/composer.json" ];   then echo "php";        return; fi
-  if [ -f "$dir/Package.swift" ];   then echo "swift";      return; fi
-  if [ -f "$dir/CMakeLists.txt" ] || [ -f "$dir/Makefile" ]; then echo "c/cpp"; return; fi
-
-  # 2. Check recent git changes for file extensions
-  local recent_ext
-  recent_ext=$(git -C "$dir" diff --name-only HEAD~3 HEAD 2>/dev/null | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
-  if [ -n "$recent_ext" ]; then
-    case "$recent_ext" in
-      ts|tsx)   echo "typescript"; return ;;
-      js|jsx)   echo "javascript"; return ;;
-      py)       echo "python";     return ;;
-      rs)       echo "rust";       return ;;
-      go)       echo "go";         return ;;
-      rb)       echo "ruby";       return ;;
-      java|kt)  echo "java";       return ;;
-      php)      echo "php";        return ;;
-      swift)    echo "swift";      return ;;
-      c|cpp|h)  echo "c/cpp";      return ;;
-      sh|bash)  echo "shell";      return ;;
-    esac
-  fi
-
-  # 3. Never null — default to "multi"
-  echo "multi"
-}
-
-get_file_type() {
-  local dir
-  dir=$(get_cwd)
-
-  if [ -n "$EVENT_FILE_PATH_FROM_JSON" ]; then
-    local event_ext
-    event_ext="${EVENT_FILE_PATH_FROM_JSON##*.}"
-    if [ -n "$event_ext" ] && [ "$event_ext" != "$EVENT_FILE_PATH_FROM_JSON" ]; then
-      echo "$event_ext"
-      return
-    fi
-  fi
-
-  # 1. Check recent git changes for the dominant file extension
-  local recent_ext
-  recent_ext=$(git -C "$dir" diff --name-only HEAD~3 HEAD 2>/dev/null | grep '\.' | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
-  if [ -n "$recent_ext" ]; then
-    # If there are multiple distinct extensions in recent changes, use "multi"
-    local ext_count
-    ext_count=$(git -C "$dir" diff --name-only HEAD~3 HEAD 2>/dev/null | grep '\.' | sed 's/.*\.//' | sort -u | wc -l | tr -d ' ')
-    if [ "$ext_count" -gt 3 ]; then
-      echo "multi"
-    else
-      echo "$recent_ext"
-    fi
-    return
-  fi
-
-  # 2. Check staged files
-  recent_ext=$(git -C "$dir" diff --cached --name-only 2>/dev/null | grep '\.' | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
-  if [ -n "$recent_ext" ]; then
-    echo "$recent_ext"
-    return
-  fi
-
-  # 3. Infer from language as last resort
-  local lang
-  lang=$(get_language)
-  case "$lang" in
-    typescript)  echo "ts" ;;
-    javascript)  echo "js" ;;
-    python)      echo "py" ;;
-    rust)        echo "rs" ;;
-    go)          echo "go" ;;
-    ruby)        echo "rb" ;;
-    java)        echo "java" ;;
-    php)         echo "php" ;;
-    swift)       echo "swift" ;;
-    c/cpp)       echo "cpp" ;;
-    shell)       echo "sh" ;;
-    *)           echo "multi" ;;
-  esac
+ensure_session_dir() {
+  mkdir -p "$CONFIG_DIR" 2>/dev/null || true
+  mkdir -p "$1" 2>/dev/null || true
 }
 
 get_session_id() {
-  local sf
-  sf=$(session_dir)
+  local cwd="$1"
+  local sid_file
+  sid_file=$(session_file "$cwd" "session_id")
 
-  # 1. Prefer hook payload session ID
+  if [ -n "$CLI_SESSION_ID" ]; then
+    printf '%s' "$CLI_SESSION_ID" > "$sid_file" 2>/dev/null || true
+    echo "$CLI_SESSION_ID"
+    return
+  fi
   if [ -n "$EVENT_SESSION_ID_FROM_JSON" ]; then
-    echo "$EVENT_SESSION_ID_FROM_JSON" > "${sf}.sid" 2>/dev/null || true
+    printf '%s' "$EVENT_SESSION_ID_FROM_JSON" > "$sid_file" 2>/dev/null || true
     echo "$EVENT_SESSION_ID_FROM_JSON"
     return
   fi
-
-  # 2. Prefer Codex-provided session ID
   if [ -n "${CODEX_SESSION_ID:-}" ]; then
-    # Persist it so subsequent hooks without the env var can still read it
-    echo "$CODEX_SESSION_ID" > "${sf}.sid" 2>/dev/null || true
+    printf '%s' "$CODEX_SESSION_ID" > "$sid_file" 2>/dev/null || true
     echo "$CODEX_SESSION_ID"
     return
   fi
-
-  # 3. Read previously persisted session ID
-  if [ -f "${sf}.sid" ]; then
-    cat "${sf}.sid"
+  if [ -f "$sid_file" ]; then
+    cat "$sid_file" 2>/dev/null
     return
   fi
 
-  # 4. Generate a new one and persist it
-  local new_id="codex-$(date +%s)-${RANDOM:-0}"
-  echo "$new_id" > "${sf}.sid" 2>/dev/null || true
+  local new_id
+  new_id="codex-$(date +%s)-${RANDOM:-0}"
+  printf '%s' "$new_id" > "$sid_file" 2>/dev/null || true
   echo "$new_id"
+}
+
+persist_session_context() {
+  local cwd="$1"
+  local session_id="$2"
+  printf '%s' "$cwd" > "$(session_file "$cwd" "cwd")" 2>/dev/null || true
+  printf '%s' "$session_id" > "$(session_file "$cwd" "session_id")" 2>/dev/null || true
 }
 
 timestamp_utc() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
-# ── Audit log ────────────────────────────────────────────────────────────────
+epoch_now() {
+  date +%s 2>/dev/null || echo 0
+}
+
+clamp_duration() {
+  local duration="$1"
+  if [ "$duration" -lt 0 ] 2>/dev/null; then
+    echo 0
+  elif [ "$duration" -gt 86400 ] 2>/dev/null; then
+    echo 86400
+  else
+    echo "$duration"
+  fi
+}
+
+duration_since_last_sent() {
+  local cwd="$1"
+  local now_ts="$2"
+  local last_file
+  last_file=$(session_file "$cwd" "last_sent")
+  if [ ! -f "$last_file" ]; then
+    echo 0
+    return
+  fi
+
+  local last_ts
+  last_ts=$(cat "$last_file" 2>/dev/null)
+  if [ -z "$last_ts" ]; then
+    echo 0
+    return
+  fi
+
+  clamp_duration $(( now_ts - last_ts ))
+}
+
+record_last_sent() {
+  local cwd="$1"
+  local now_ts="$2"
+  printf '%s' "$now_ts" > "$(session_file "$cwd" "last_sent")" 2>/dev/null || true
+}
+
+cleanup_session_state() {
+  local cwd="$1"
+  rm -f \
+    "$(session_file "$cwd" "last_sent")" \
+    "$(session_file "$cwd" "session_id")" \
+    "$(session_file "$cwd" "cwd")" \
+    "$(session_file "$cwd" "timer.pid")" 2>/dev/null || true
+  rmdir "$(session_dir "$cwd")" 2>/dev/null || true
+}
 
 rotate_audit_log() {
   if [ -f "$AUDIT_LOG" ]; then
     local size
     size=$(wc -c < "$AUDIT_LOG" 2>/dev/null || echo 0)
     if [ "$size" -gt "$AUDIT_MAX_BYTES" ]; then
-      local lines
+      local lines keep
       lines=$(wc -l < "$AUDIT_LOG" 2>/dev/null || echo 0)
-      local keep=$(( lines / 2 ))
+      keep=$(( lines / 2 ))
       tail -n "$keep" "$AUDIT_LOG" > "$AUDIT_LOG.tmp" 2>/dev/null && \
         mv -f "$AUDIT_LOG.tmp" "$AUDIT_LOG" 2>/dev/null || \
         rm -f "$AUDIT_LOG.tmp"
@@ -316,27 +175,133 @@ append_audit() {
   local api_url="$3"
   local http_status="$4"
 
-  local record
-  record=$(printf '{"ts":"%s","profile":"%s","api_url":"%s","http_status":"%s","payload":%s}' \
-    "$(timestamp_utc)" "$profile_name" "$api_url" "$http_status" "$payload")
-
   rotate_audit_log
-  echo "$record" >> "$AUDIT_LOG" 2>/dev/null || true
+  printf '{"ts":"%s","profile":"%s","api_url":"%s","http_status":"%s","payload":%s}\n' \
+    "$(timestamp_utc)" "$profile_name" "$api_url" "$http_status" "$payload" >> "$AUDIT_LOG" 2>/dev/null || true
 }
 
 append_status_audit() {
   local project_name="$1"
   local event_name="$2"
   local status="$3"
-  local record
-  record=$(printf '{"ts":"%s","project":"%s","event":"%s","status":"%s"}' \
-    "$(timestamp_utc)" "$project_name" "$event_name" "$status")
 
   rotate_audit_log
-  echo "$record" >> "$AUDIT_LOG" 2>/dev/null || true
+  printf '{"ts":"%s","project":"%s","event":"%s","status":"%s"}\n' \
+    "$(timestamp_utc)" "$project_name" "$event_name" "$status" >> "$AUDIT_LOG" 2>/dev/null || true
 }
 
-# ── Heartbeat ────────────────────────────────────────────────────────────────
+get_project_name() {
+  local cwd="$1"
+  local name
+  name=$(basename "$cwd")
+  if [ -z "$name" ] || [ "$name" = "/" ]; then
+    name=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null)
+  fi
+  echo "${name:-unknown}"
+}
+
+get_editor() {
+  case "${CODEX_CLIENT:-cli}" in
+    app|desktop) echo "Codex App" ;;
+    *) echo "Codex CLI" ;;
+  esac
+}
+
+get_branch() {
+  local cwd="$1"
+  git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown"
+}
+
+get_language() {
+  local dir="$1"
+
+  if [ -n "$EVENT_FILE_PATH_FROM_JSON" ]; then
+    local ext
+    ext="${EVENT_FILE_PATH_FROM_JSON##*.}"
+    if [ -n "$ext" ] && [ "$ext" != "$EVENT_FILE_PATH_FROM_JSON" ]; then
+      case "$ext" in
+        ts|tsx) echo "typescript"; return ;;
+        js|jsx) echo "javascript"; return ;;
+        py) echo "python"; return ;;
+        rs) echo "rust"; return ;;
+        go) echo "go"; return ;;
+        rb) echo "ruby"; return ;;
+        java|kt) echo "java"; return ;;
+        php) echo "php"; return ;;
+        swift) echo "swift"; return ;;
+        c|cpp|h) echo "c/cpp"; return ;;
+        sh|bash|zsh) echo "shell"; return ;;
+        json) echo "json"; return ;;
+        md|markdown) echo "markdown"; return ;;
+      esac
+    fi
+  fi
+
+  if [ -f "$dir/package.json" ] || [ -f "$dir/tsconfig.json" ]; then
+    if [ -f "$dir/tsconfig.json" ]; then echo "typescript"; return; fi
+    echo "javascript"; return
+  fi
+  if [ -f "$dir/Cargo.toml" ]; then echo "rust"; return; fi
+  if [ -f "$dir/go.mod" ]; then echo "go"; return; fi
+  if [ -f "$dir/pyproject.toml" ] || [ -f "$dir/setup.py" ] || [ -f "$dir/setup.cfg" ]; then echo "python"; return; fi
+  if [ -f "$dir/Gemfile" ]; then echo "ruby"; return; fi
+  if [ -f "$dir/build.gradle" ] || [ -f "$dir/pom.xml" ]; then echo "java"; return; fi
+  if [ -f "$dir/mix.exs" ]; then echo "elixir"; return; fi
+  if [ -f "$dir/composer.json" ]; then echo "php"; return; fi
+  if [ -f "$dir/Package.swift" ]; then echo "swift"; return; fi
+  if [ -f "$dir/CMakeLists.txt" ] || [ -f "$dir/Makefile" ]; then echo "c/cpp"; return; fi
+
+  echo "multi"
+}
+
+get_file_type() {
+  local dir="$1"
+
+  if [ -n "$EVENT_FILE_PATH_FROM_JSON" ]; then
+    local event_ext
+    event_ext="${EVENT_FILE_PATH_FROM_JSON##*.}"
+    if [ -n "$event_ext" ] && [ "$event_ext" != "$EVENT_FILE_PATH_FROM_JSON" ]; then
+      echo "$event_ext"
+      return
+    fi
+  fi
+
+  local recent_ext
+  recent_ext=$(git -C "$dir" diff --name-only HEAD~3 HEAD 2>/dev/null | grep '\.' | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
+  if [ -n "$recent_ext" ]; then
+    local ext_count
+    ext_count=$(git -C "$dir" diff --name-only HEAD~3 HEAD 2>/dev/null | grep '\.' | sed 's/.*\.//' | sort -u | wc -l | tr -d ' ')
+    if [ "$ext_count" -gt 3 ]; then
+      echo "multi"
+    else
+      echo "$recent_ext"
+    fi
+    return
+  fi
+
+  case "$(get_language "$dir")" in
+    typescript) echo "ts" ;;
+    javascript) echo "js" ;;
+    python) echo "py" ;;
+    rust) echo "rs" ;;
+    go) echo "go" ;;
+    ruby) echo "rb" ;;
+    java) echo "java" ;;
+    php) echo "php" ;;
+    swift) echo "swift" ;;
+    c/cpp) echo "cpp" ;;
+    shell) echo "sh" ;;
+    *) echo "multi" ;;
+  esac
+}
+
+map_event() {
+  case "$1" in
+    SessionStart) echo "session_start" ;;
+    Stop) echo "session_end" ;;
+    *) echo "heartbeat" ;;
+  esac
+}
 
 build_payload() {
   local event="$1"
@@ -372,38 +337,34 @@ send_heartbeat_to_profile() {
   append_audit "$profile_name" "$payload" "$api_url" "$http_status"
 }
 
-# ── Profile dispatch ─────────────────────────────────────────────────────────
+is_legacy_config() {
+  grep -q '"profiles"' "$CONFIG_FILE" 2>/dev/null && return 1
+  grep -q '"api_key"' "$CONFIG_FILE" 2>/dev/null && return 0
+  return 1
+}
 
 dispatch_to_profiles() {
-  local event="$1"
-  local duration="$2"
+  local cwd="$1"
+  local session_id="$2"
+  local event="$3"
+  local duration="$4"
 
-  # Resolve all fields once (each guaranteed non-null)
-  local now
+  [ ! -f "$CONFIG_FILE" ] && return
+
+  local now project_name editor branch language file_type payload
   now=$(timestamp_utc)
-  local session_id
-  session_id=$(get_session_id)
-  local project_name
-  project_name=$(get_project_name)
-  local editor
+  project_name=$(get_project_name "$cwd")
   editor=$(get_editor)
-  local branch
-  branch=$(get_branch)
-  local language
-  language=$(get_language)
-  local file_type
-  file_type=$(get_file_type)
-  local cwd
-  cwd=$(get_cwd)
-
-  local payload
-  payload=$(build_payload "$event" "$duration" "$now" "$session_id" \
-    "$project_name" "$editor" "$branch" "$language" "$file_type")
+  branch=$(get_branch "$cwd")
+  language=$(get_language "$cwd")
+  file_type=$(get_file_type "$cwd")
+  payload=$(build_payload "$event" "$duration" "$now" "$session_id" "$project_name" "$editor" "$branch" "$language" "$file_type")
 
   if is_legacy_config; then
-    local api_key api_url
-    api_key=$(json_string "$(cat "$CONFIG_FILE")" "api_key")
-    api_url=$(json_string "$(cat "$CONFIG_FILE")" "api_url")
+    local config_content api_key api_url
+    config_content=$(cat "$CONFIG_FILE" 2>/dev/null)
+    api_key=$(json_string "$config_content" "api_key")
+    api_url=$(json_string "$config_content" "api_url")
     if [ -n "$api_key" ] && [ -n "$api_url" ]; then
       send_heartbeat_to_profile "$api_key" "$api_url" "default" "$payload"
     else
@@ -451,108 +412,118 @@ NODE
     else
       append_status_audit "$project_name" "$event" "skipped:no_matching_profile"
     fi
+  fi
+}
+
+timer_is_running() {
+  local cwd="$1"
+  local pid_file timer_pid
+  pid_file=$(session_file "$cwd" "timer.pid")
+  [ -f "$pid_file" ] || return 1
+  timer_pid=$(cat "$pid_file" 2>/dev/null)
+  [ -n "$timer_pid" ] || return 1
+  kill -0 "$timer_pid" 2>/dev/null
+}
+
+start_timer_loop() {
+  local cwd="$1"
+  local session_id="$2"
+  local pid_file
+  pid_file=$(session_file "$cwd" "timer.pid")
+
+  if timer_is_running "$cwd"; then
     return
   fi
 
-  local config_content
-  config_content=$(cat "$CONFIG_FILE")
+  nohup "$0" "__timer_loop" "$cwd" "$session_id" >/dev/null 2>&1 &
+  printf '%s' "$!" > "$pid_file" 2>/dev/null || true
+}
 
-  local profile_blocks
-  profile_blocks=$(echo "$config_content" | extract_profiles)
-
-  local sent=0
-  while IFS= read -r block; do
-    [ -z "$block" ] && continue
-
-    if cwd_matches_profile "$block" "$cwd"; then
-      local api_key api_url profile_name
-      api_key=$(json_string "$block" "api_key")
-      api_url=$(json_string "$block" "api_url")
-      profile_name=$(json_string "$block" "name")
-      profile_name="${profile_name:-unnamed}"
-
-      if [ -n "$api_key" ] && [ -n "$api_url" ]; then
-        send_heartbeat_to_profile "$api_key" "$api_url" "$profile_name" "$payload" &
-        sent=$((sent + 1))
-      fi
+stop_timer_loop() {
+  local cwd="$1"
+  local pid_file timer_pid
+  pid_file=$(session_file "$cwd" "timer.pid")
+  if [ -f "$pid_file" ]; then
+    timer_pid=$(cat "$pid_file" 2>/dev/null)
+    if [ -n "$timer_pid" ]; then
+      kill "$timer_pid" 2>/dev/null || true
     fi
-  done <<< "$profile_blocks"
-
-  if [ "$sent" -gt 0 ]; then
-    wait 2>/dev/null || true
-  else
-    append_status_audit "$project_name" "$event" "skipped:no_matching_profile"
+    rm -f "$pid_file" 2>/dev/null || true
   fi
 }
 
-clamp_duration() {
-  local duration="$1"
-  if [ "$duration" -lt 0 ] 2>/dev/null; then
-    echo 0
-  elif [ "$duration" -gt 86400 ] 2>/dev/null; then
-    echo 86400
-  else
-    echo "$duration"
-  fi
-}
+run_timer_loop() {
+  local cwd="$1"
+  local session_id="$2"
+  local pid_file
+  pid_file=$(session_file "$cwd" "timer.pid")
+  printf '%s' "$$" > "$pid_file" 2>/dev/null || true
 
-duration_since_last_event() {
-  local sf="$1"
-  local now_ts="$2"
-  local duration=0
+  while true; do
+    sleep "$HEARTBEAT_INTERVAL_SECONDS" || exit 0
 
-  if [ -f "${sf}.last" ]; then
-    local last_ts
-    last_ts=$(cat "${sf}.last" 2>/dev/null)
-    if [ -n "$last_ts" ]; then
-      duration=$(( now_ts - last_ts ))
+    if [ ! -f "$(session_file "$cwd" "session_id")" ]; then
+      exit 0
     fi
-  fi
+    if [ "$(cat "$pid_file" 2>/dev/null)" != "$$" ]; then
+      exit 0
+    fi
 
-  clamp_duration "$duration"
+    local now_ts duration_seconds
+    now_ts=$(epoch_now)
+    duration_seconds=$(duration_since_last_sent "$cwd" "$now_ts")
+    if [ "$duration_seconds" -lt "$MIN_TICK_DURATION_SECONDS" ] 2>/dev/null; then
+      continue
+    fi
+
+    dispatch_to_profiles "$cwd" "$session_id" "heartbeat" "$duration_seconds"
+    record_last_sent "$cwd" "$now_ts"
+  done
 }
-
-record_last_event() {
-  local sf="$1"
-  local now_ts="$2"
-  echo "$now_ts" > "${sf}.last" 2>/dev/null || true
-}
-
-# ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
-  if [ ! -f "$CONFIG_FILE" ]; then
+  local cwd session_id raw_event event_type now_ts duration_seconds
+  cwd=$(get_cwd)
+  [ -z "$cwd" ] && exit 0
+  ensure_session_dir "$(session_dir "$cwd")"
+
+  if [ "$CLI_EVENT" = "__timer_loop" ]; then
+    run_timer_loop "$cwd" "$(get_session_id "$cwd")"
     exit 0
   fi
 
-  local event="${1:-${CODEX_HOOK_EVENT:-${EVENT_NAME_FROM_JSON:-unknown}}}"
-  local sf
-  sf=$(session_dir)
-  local now_ts
-  now_ts=$(date +%s 2>/dev/null || echo 0)
-  local duration=0
+  session_id=$(get_session_id "$cwd")
+  persist_session_context "$cwd" "$session_id"
 
-  case "$event" in
-    SessionStart)
-      get_session_id > /dev/null
-      record_last_event "$sf" "$now_ts"
-      dispatch_to_profiles "$event" 0
-      ;;
+  raw_event="${CLI_EVENT:-$EVENT_NAME_FROM_JSON}"
+  [ -z "$raw_event" ] && raw_event="heartbeat"
+  event_type=$(map_event "$raw_event")
 
-    Stop)
-      duration=$(duration_since_last_event "$sf" "$now_ts")
-      dispatch_to_profiles "$event" "$duration"
-      rm -f "${sf}.last" "${sf}.sid"
-      ;;
+  if { [ "$event_type" = "session_end" ] && [ ! -f "$(session_file "$cwd" "last_sent")" ] && [ ! -f "$(session_file "$cwd" "timer.pid")" ]; }; then
+    exit 0
+  fi
 
-    *)
-      duration=$(duration_since_last_event "$sf" "$now_ts")
-      dispatch_to_profiles "$event" "$duration"
-      record_last_event "$sf" "$now_ts"
-      ;;
-  esac
+  now_ts=$(epoch_now)
+  if [ "$raw_event" = "SessionStart" ]; then
+    dispatch_to_profiles "$cwd" "$session_id" "session_start" 0
+    record_last_sent "$cwd" "$now_ts"
+    start_timer_loop "$cwd" "$session_id"
+    exit 0
+  fi
+
+  if ! timer_is_running "$cwd"; then
+    start_timer_loop "$cwd" "$session_id"
+  fi
+
+  duration_seconds=$(duration_since_last_sent "$cwd" "$now_ts")
+  dispatch_to_profiles "$cwd" "$session_id" "$event_type" "$duration_seconds"
+  record_last_sent "$cwd" "$now_ts"
+
+  if [ "$event_type" = "session_end" ]; then
+    stop_timer_loop "$cwd"
+    cleanup_session_state "$cwd"
+  fi
 }
 
-# Run silently — never let tracking errors propagate to Codex
-main "$@" 2>/dev/null
+main
 exit 0
