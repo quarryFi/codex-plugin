@@ -10,6 +10,16 @@
         ]
       }
     ],
+    "TaskStarted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./hooks/track-session.sh TaskStarted"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit|Read|Bash|Glob|Grep|Agent",
@@ -27,6 +37,16 @@
           {
             "type": "command",
             "command": "./hooks/track-session.sh UserPromptSubmit"
+          }
+        ]
+      }
+    ],
+    "TaskComplete": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./hooks/track-session.sh TaskComplete"
           }
         ]
       }

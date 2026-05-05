@@ -48,6 +48,13 @@ Refresh the local quarryFi time tracking plugin install by pulling the latest ch
    Restart the Codex App to load the new version.
    ```
 
+8. Be explicit that this updates the local plugin folder on disk. The current Codex session may still be running the previously cached copy until restart.
+
+9. Suggest verifying with `quarryfi-status` after restart so the user can confirm:
+   - the installed version
+   - the latest local audit timestamp
+   - whether a hook has fired in the new session
+
 8. If `git pull` fails (e.g., local modifications), suggest:
    ```bash
    cd <plugin-dir>
@@ -61,4 +68,4 @@ Refresh the local quarryFi time tracking plugin install by pulling the latest ch
 - If the directory exists but is not a git repo, tell the user to re-clone.
 - If there's no network, say the update check failed and to try again later.
 - Never delete or overwrite the user's `~/.quarryfi/config.json` — that's separate from the plugin code.
-- Be explicit that this updates the local plugin folder on disk; the current Codex session may still need a restart before the new version is active.
+- Be explicit that this updates the local plugin folder on disk; the current Codex session still needs a restart before the new version is active.

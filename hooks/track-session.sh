@@ -21,6 +21,11 @@ CLI_EVENT="${1:-}"
 CLI_CWD="${2:-}"
 CLI_SESSION_ID="${3:-}"
 EVENT_JSON=$(cat 2>/dev/null || true)
+SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$SCRIPT_PATH")" 2>/dev/null && pwd)
+PLUGIN_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." 2>/dev/null && pwd)
+PLUGIN_MANIFEST="$PLUGIN_ROOT/.codex-plugin/plugin.json"
+HOOK_MODE="event_plus_timer"
 
 json_string() {
   printf '%s' "$1" | grep -o "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*:[[:space:]]*"\(.*\)"/\1/'
@@ -30,6 +35,35 @@ EVENT_NAME_FROM_JSON=$(json_string "$EVENT_JSON" "hook_event_name")
 EVENT_CWD_FROM_JSON=$(json_string "$EVENT_JSON" "cwd")
 EVENT_SESSION_ID_FROM_JSON=$(json_string "$EVENT_JSON" "session_id")
 EVENT_FILE_PATH_FROM_JSON=$(json_string "$EVENT_JSON" "file_path")
+EVENT_NAME_FROM_ENV="${CODEX_HOOK_EVENT:-${HOOK_EVENT_NAME:-}}"
+
+get_plugin_version() {
+  if [ -f "$PLUGIN_MANIFEST" ]; then
+    grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$PLUGIN_MANIFEST" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*"\(.*\)"/\1/'
+    return
+  fi
+  echo "unknown"
+}
+
+get_runtime_channel() {
+  case "$PLUGIN_ROOT" in
+    *"/.codex/plugins/cache/personal-plugins/"*) echo "codex_personal_cache" ;;
+    *"/plugins/quarryfi-time-tracker"*) echo "codex_local_clone" ;;
+    *) echo "codex_plugin_custom" ;;
+  esac
+}
+
+get_install_revision() {
+  if [ -f "$SCRIPT_PATH" ]; then
+    shasum -a 256 "$SCRIPT_PATH" 2>/dev/null | cut -c1-12
+    return
+  fi
+  if [ -f "$PLUGIN_MANIFEST" ]; then
+    shasum -a 256 "$PLUGIN_MANIFEST" 2>/dev/null | cut -c1-12
+    return
+  fi
+  echo "unknown"
+}
 
 get_cwd() {
   if [ -n "$CLI_CWD" ]; then
@@ -313,9 +347,13 @@ build_payload() {
   local branch="$7"
   local language="$8"
   local file_type="$9"
+  local plugin_version="${10}"
+  local runtime_channel="${11}"
+  local install_revision="${12}"
+  local host_app="${13}"
 
   cat <<EOF
-{"heartbeats":[{"source":"codex","project_name":"${project_name}","language":"${language}","file_type":"${file_type}","branch":"${branch}","editor":"${editor}","timestamp":"${now}","duration_seconds":${duration},"session_id":"${session_id}","event":"${event}"}]}
+{"client":{"plugin_version":"${plugin_version}","runtime_channel":"${runtime_channel}","hook_mode":"${HOOK_MODE}","install_revision":"${install_revision}","host_app":"${host_app}"},"heartbeats":[{"source":"codex","project_name":"${project_name}","language":"${language}","file_type":"${file_type}","branch":"${branch}","editor":"${editor}","timestamp":"${now}","duration_seconds":${duration},"session_id":"${session_id}","event":"${event}"}]}
 EOF
 }
 
@@ -324,6 +362,8 @@ send_heartbeat_to_profile() {
   local api_url="$2"
   local profile_name="$3"
   local payload="$4"
+  local project_name="$5"
+  local event_name="$6"
 
   local http_status
   http_status=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -335,6 +375,11 @@ send_heartbeat_to_profile() {
     "${api_url}/api/heartbeat" 2>/dev/null || echo "000")
 
   append_audit "$profile_name" "$payload" "$api_url" "$http_status"
+  if [ "$http_status" = "200" ] || [ "$http_status" = "201" ] || [ "$http_status" = "204" ]; then
+    append_status_audit "$project_name" "$event_name" "sent"
+  else
+    append_status_audit "$project_name" "$event_name" "error:${http_status}"
+  fi
 }
 
 is_legacy_config() {
@@ -352,13 +397,19 @@ dispatch_to_profiles() {
   [ ! -f "$CONFIG_FILE" ] && return
 
   local now project_name editor branch language file_type payload
+  local plugin_version runtime_channel install_revision host_app
   now=$(timestamp_utc)
   project_name=$(get_project_name "$cwd")
   editor=$(get_editor)
   branch=$(get_branch "$cwd")
   language=$(get_language "$cwd")
   file_type=$(get_file_type "$cwd")
-  payload=$(build_payload "$event" "$duration" "$now" "$session_id" "$project_name" "$editor" "$branch" "$language" "$file_type")
+  plugin_version=$(get_plugin_version)
+  runtime_channel=$(get_runtime_channel)
+  install_revision=$(get_install_revision)
+  host_app=$(printf '%s' "$editor" | tr '[:upper:] ' '[:lower:]_' | tr -s '_')
+  append_status_audit "$project_name" "$event" "hook_fired"
+  payload=$(build_payload "$event" "$duration" "$now" "$session_id" "$project_name" "$editor" "$branch" "$language" "$file_type" "$plugin_version" "$runtime_channel" "$install_revision" "$host_app")
 
   if is_legacy_config; then
     local config_content api_key api_url
@@ -366,7 +417,7 @@ dispatch_to_profiles() {
     api_key=$(json_string "$config_content" "api_key")
     api_url=$(json_string "$config_content" "api_url")
     if [ -n "$api_key" ] && [ -n "$api_url" ]; then
-      send_heartbeat_to_profile "$api_key" "$api_url" "default" "$payload"
+      send_heartbeat_to_profile "$api_key" "$api_url" "default" "$payload" "$project_name" "$event"
     else
       append_status_audit "$project_name" "$event" "skipped:missing_credentials"
     fi
@@ -403,7 +454,7 @@ NODE
     local sent=0
     while IFS=$'\t' read -r profile_name api_key api_url; do
       [ -z "$api_key" ] && continue
-      send_heartbeat_to_profile "$api_key" "$api_url" "$profile_name" "$payload" &
+      send_heartbeat_to_profile "$api_key" "$api_url" "$profile_name" "$payload" "$project_name" "$event" &
       sent=$((sent + 1))
     done <<< "$matched_profiles"
 
@@ -495,7 +546,7 @@ main() {
   session_id=$(get_session_id "$cwd")
   persist_session_context "$cwd" "$session_id"
 
-  raw_event="${CLI_EVENT:-$EVENT_NAME_FROM_JSON}"
+  raw_event="${CLI_EVENT:-${EVENT_NAME_FROM_JSON:-$EVENT_NAME_FROM_ENV}}"
   [ -z "$raw_event" ] && raw_event="heartbeat"
   event_type=$(map_event "$raw_event")
 

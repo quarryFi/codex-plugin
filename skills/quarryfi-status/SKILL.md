@@ -3,7 +3,7 @@ name: quarryfi-status
 description: Check quarryFi R&D tracking status across all configured company profiles
 ---
 
-Show the user's QuarryFi tracking status across all configured profiles.
+Show the user's QuarryFi tracking status across all configured profiles, plus the currently installed Codex plugin version and whether hooks have fired recently on this machine.
 
 ## What to do
 
@@ -22,27 +22,36 @@ Show the user's QuarryFi tracking status across all configured profiles.
    - Mapped project directories (or "all projects" if empty)
    - Whether the current working directory matches this profile
 
-4. For each profile, query the status endpoint:
+4. Read the local plugin version:
+   - Check `~/plugins/quarryfi-time-tracker/.codex-plugin/plugin.json` first
+   - If the plugin is installed elsewhere, read the version from that install's `.codex-plugin/plugin.json`
+
+5. For each profile, query the status endpoint:
    ```bash
    curl -s -H "Authorization: Bearer $API_KEY" "$API_URL/api/status"
    ```
 
-5. If the API responds successfully, display per profile:
+6. If the API responds successfully, display per profile:
    - Last heartbeat timestamp
+   - Last accepted heartbeat receipt
+   - Last authenticated contact
+   - Health state
+   - Plugin version / runtime channel / hook mode / install revision
    - Last 24 hours tracked minutes
    - Last 7 days tracked minutes
    - Active projects from the last 7 days
    - Recent sessions
 
-6. If the API request fails, fall back to the local audit log instead of stopping.
+7. If the API request fails, fall back to the local audit log instead of stopping.
 
-7. Show audit log summary:
+8. Show audit log summary:
    - Check if `~/.quarryfi/audit.log` exists
    - Show the count of recent entries and last heartbeat timestamp
+   - Specifically note whether there is any `hook_fired` entry from the current session/day
    - If the user asks for details, show the last 10 lines of the audit log
 
-8. If any API returns an error, show the HTTP status and suggest verifying the API key.
-9. Tell the user the dashboard remains the source of truth for deduped activity blocks and qualification review.
+9. If any API returns an error, show the HTTP status and suggest verifying the API key.
+10. Tell the user the dashboard remains the source of truth for deduped activity blocks and qualification review.
 
 ## Response format
 

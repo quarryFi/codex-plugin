@@ -7,7 +7,7 @@ quarryFi time tracking plugin for OpenAI Codex (CLI and App). Sends heartbeats t
 ## Architecture
 
 - `.codex-plugin/plugin.json` — Codex plugin manifest (name: `quarryfi-time-tracker`)
-- `hooks/track-session.sh` — Lifecycle hook for SessionStart, TaskStarted, TaskComplete, Stop
+- `hooks/track-session.sh` — Shared lifecycle hook for SessionStart, TaskStarted, PostToolUse, UserPromptSubmit, TaskComplete, and Stop
 - `skills/quarryfi-status/SKILL.md` — Status check skill
 - `skills/quarryfi-update/SKILL.md` — Self-update skill (git pull from inside Codex)
 - `setup.sh` — Interactive multi-profile config setup
@@ -32,9 +32,21 @@ Every heartbeat sent to `POST /api/heartbeat` must include ALL of these fields w
 
 This applies everywhere — including `setup.sh`'s verify_key function, which must send a complete payload (not a minimal one) or the API returns 400.
 
+### Runtime diagnostics are required
+
+Every heartbeat request should also include a top-level `client` object with:
+
+- `plugin_version`
+- `runtime_channel`
+- `hook_mode`
+- `install_revision`
+- `host_app`
+
+These are used only for runtime health diagnostics. They must never include prompts, code, or file contents.
+
 ### Session files use stable paths, not PID
 
-Session files (`*.start`, `*.sid`) are stored at `/tmp/quarryfi-codex-{hash}` where hash is derived from `shasum` of the project directory. NEVER use `$$` (PID) — each hook invocation is a separate process.
+Session files live under `~/.quarryfi/session-codex-{hash}` where hash is derived from `shasum` of the project directory. NEVER use `$$` (PID) — each hook invocation is a separate process.
 
 ### Config format is shared
 
@@ -58,3 +70,4 @@ Current version: see `.codex-plugin/plugin.json`
 - `bash -n hooks/track-session.sh` — syntax check
 - `bash -n setup.sh` — syntax check
 - Test verify_key by running `setup.sh` with a real key — must get HTTP 200, not 400
+- Manual smoke: run the hook directly with CLI args and with JSON stdin, then confirm `~/.quarryfi/audit.log` records `hook_fired`

@@ -16,6 +16,7 @@ Supports **multiple company profiles** with project-to-key routing — freelance
 
 You can enable/disable the plugin at any time from the plugin directory. Codex stores your preference in `~/.codex/config.toml`.
 Installing from Personal Plugins does not mean Codex will auto-pull future GitHub changes. If the plugin lives in a local clone, that local clone still needs to be updated.
+After a local update, start a new Codex session so the fresh hook code and skills actually load.
 
 > **First time?** The plugin needs to be registered in a marketplace before it appears in the app. Follow the Home-Local or Repo-Local setup below to make it discoverable, then use the app flow above to install it.
 
@@ -204,6 +205,7 @@ When detected, it's treated as one profile that matches all projects. Running `s
 - **Editor type** — Codex CLI or Codex App
 - **Branch** — current git branch
 - **Language** — best-effort detection from project files
+- **Runtime diagnostics** — plugin version, runtime channel, hook mode, and install revision so QuarryFi can tell a stale install from a healthy one
 
 ### Audit Log
 
@@ -219,7 +221,7 @@ Every heartbeat is appended to `~/.quarryfi/audit.log` as one JSON line per even
 
 ### Privacy
 
-- Only project-level metadata is sent (project name, branch, duration)
+- Only project-level metadata is sent (project name, branch, duration) plus minimal runtime diagnostics (plugin version, runtime channel, hook mode, install revision)
 - No source code, file contents, prompts, or AI responses are transmitted
 - Data goes only to the API URL configured in each profile
 - All tracking runs silently — errors never interrupt your workflow
@@ -227,12 +229,13 @@ Every heartbeat is appended to `~/.quarryfi/audit.log` as one JSON line per even
 
 ## How It Works
 
-The plugin hooks into Codex lifecycle events:
+The plugin hooks into Codex lifecycle events and keeps a 60-second timer alive while the session is active:
 
 | Event | Action |
 |-------|--------|
-| `SessionStart` / `TaskStarted` | Records start time, sends start heartbeat to matching profiles |
-| `TaskComplete` / `Stop` | Calculates duration, sends completion heartbeat to matching profiles |
+| `SessionStart` | Sends a session-start heartbeat and starts the timer |
+| `TaskStarted` / `PostToolUse` / `UserPromptSubmit` / `TaskComplete` | Flushes recent activity without double-counting |
+| `Stop` | Sends the final heartbeat and clears timer state |
 
 Heartbeats are sent to `POST /api/heartbeat` with source `"codex"`. Multiple profiles are dispatched concurrently.
 
@@ -244,7 +247,7 @@ Check your tracking status from within Codex:
 
 > "Check my quarryFi R&D tracking status"
 
-Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, and audit log summary.
+Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, the local installed plugin version, and whether any hook fired in the current session.
 
 ### quarryfi-update
 
@@ -252,11 +255,11 @@ Update the plugin to the latest version without leaving Codex:
 
 > "Update quarryFi plugin"
 
-Pulls the latest changes from GitHub, shows what changed, and reminds you to restart the Codex App. No need to open a terminal.
+Pulls the latest changes from GitHub into the local plugin folder Codex is using, shows what changed, and reminds you to restart the Codex App. No need to open a terminal, but the restart still matters because personal plugins do not hot-reload mid-session.
 
 ## Updating
 
-There's no auto-update mechanism in the Codex plugin system yet for local personal plugins. To update:
+There's no background auto-update mechanism in the Codex plugin system yet for local personal plugins. To update:
 
 **From inside Codex** (easiest): just ask "Update quarryFi plugin" — the `quarryfi-update` skill handles it.
 
