@@ -5,6 +5,10 @@ description: Refresh the local quarryFi plugin install from GitHub
 
 Refresh the local quarryFi time tracking plugin install by pulling the latest changes from GitHub into the folder Codex is currently using.
 
+## Safety invariant
+
+The local plugin checkout must not change during ordinary Codex use. Runtime hooks, status checks, and background heartbeats may write only to `~/.quarryfi/`. This update skill is the only sanctioned workflow that changes files under the plugin directory, and it should make that explicit in its response.
+
 ## What to do
 
 1. Find the plugin installation directory. Check these locations in order:
@@ -23,45 +27,65 @@ Refresh the local quarryFi time tracking plugin install by pulling the latest ch
    git fetch origin main 2>/dev/null
    LOCAL=$(git rev-parse HEAD)
    REMOTE=$(git rev-parse origin/main)
+   STATUS=$(git status --short)
    ```
 
-4. If `$LOCAL` equals `$REMOTE`, tell the user:
+4. Before pulling, protect against dirty or half-updated checkouts:
+   - If `$STATUS` is non-empty and `git diff --quiet origin/main` succeeds, the files on disk already match the remote but git metadata is stale. Tell the user:
+     ```
+     quarryFi plugin files already match GitHub, but the local git branch is stale.
+     This indicates an out-of-band file sync or interrupted update.
+     Repairing git metadata only; file contents will not change.
+     ```
+     Then run:
+     ```bash
+     git reset --mixed origin/main
+     ```
+     After that, recompute `LOCAL`, `REMOTE`, and `STATUS`.
+   - If `$STATUS` is non-empty and the worktree does not match `origin/main`, do not pull and do not stash automatically. Show `git status --short` and tell the user:
+     ```
+     quarryFi plugin update blocked because the plugin checkout has local edits.
+     Review or stash those edits, then run the update again.
+     ```
+     If they want to preserve those edits, suggest:
+     ```bash
+     cd <plugin-dir>
+     git stash push -m quarryfi-plugin-local-edits
+     git pull --ff-only origin main
+     git stash pop
+     ```
+
+5. If `$LOCAL` equals `$REMOTE` and `$STATUS` is empty, tell the user:
    ```
    quarryFi plugin is already up to date (version X.Y.Z).
    ```
    Read the version from `.codex-plugin/plugin.json`.
 
-5. If there are updates available, show what's changed:
+6. If there are updates available, show what's changed:
    ```bash
    git log --oneline HEAD..origin/main
    ```
 
-6. Pull the update:
+7. Pull the update with fast-forward only:
    ```bash
-   git pull origin main
+   git pull --ff-only origin main
    ```
 
-7. Read the new version from `.codex-plugin/plugin.json` and show:
+8. Read the new version from `.codex-plugin/plugin.json` and show:
    ```
    ✓ quarryFi plugin updated to vX.Y.Z
 
    Restart the Codex App to load the new version.
    ```
 
-8. Be explicit that this updates the local plugin folder on disk. The current Codex session may still be running the previously cached copy until restart.
+9. Be explicit that this updates the local plugin folder on disk. The current Codex session may still be running the previously cached copy until restart.
 
-9. Suggest verifying with `quarryfi-status` after restart so the user can confirm:
+10. Suggest verifying with `quarryfi-status` after restart so the user can confirm:
    - the installed version
    - the latest local audit timestamp
    - whether a hook has fired in the new session
 
-8. If `git pull` fails (e.g., local modifications), suggest:
-   ```bash
-   cd <plugin-dir>
-   git stash
-   git pull origin main
-   git stash pop
-   ```
+11. If `git pull --ff-only` fails, do not try a merge. Report the failure and show the user the current `git status --short`.
 
 ## Error handling
 

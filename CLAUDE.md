@@ -14,6 +14,10 @@ quarryFi time tracking plugin for OpenAI Codex (CLI and App). Sends heartbeats t
 
 ## Critical Rules for Updates
 
+### Plugin source is immutable at runtime
+
+Normal Codex sessions, lifecycle hooks, and status checks must never modify files under the plugin checkout. Runtime state belongs only under `~/.quarryfi/` (config, audit log, and session files). The explicit `quarryfi-update` skill is the only workflow allowed to change the local plugin folder, and it must do so with a fast-forward git update or a clearly reported repair of stale git metadata.
+
 ### Heartbeat payload — all 9 fields required, never null
 
 Every heartbeat sent to `POST /api/heartbeat` must include ALL of these fields with real values:
