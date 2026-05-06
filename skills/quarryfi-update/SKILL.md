@@ -9,11 +9,24 @@ Refresh the local quarryFi time tracking plugin install by pulling the latest ch
 
 The local plugin checkout must not change during ordinary Codex use. Runtime hooks, status checks, and background heartbeats may write only to `~/.quarryfi/`. This update skill is the only sanctioned workflow that changes files under the plugin directory, and it should make that explicit in its response.
 
+Keep three locations distinct:
+
+- Upstream development repo: where maintainers author, commit, and push product changes to GitHub.
+- Local install source: the clone referenced by the Codex marketplace; this is what the updater may fast-forward.
+- Codex runtime cache: `~/.codex/plugins/cache/...`; Codex owns this copy. Never run `git pull`, `git reset`, or repair commands inside the cache.
+
 ## What to do
 
 1. Find the plugin installation directory. Check these locations in order:
    - `~/plugins/quarryfi-time-tracker` (home-local install)
-   - Search for a directory containing `.codex-plugin/plugin.json` with `"name": "quarryfi-time-tracker"` under `~/plugins/`, `~/.codex/plugins/`, or the current repo's `plugins/` directory
+   - Marketplace source paths in `~/.agents/plugins/marketplace.json` and `<repo>/.agents/plugins/marketplace.json`, resolving relative `source.path` entries from the marketplace file's parent directory
+   - Search for a directory containing `.codex-plugin/plugin.json` with `"name": "quarryfi-time-tracker"` under `~/plugins/`, `~/.codex/plugins/` excluding `~/.codex/plugins/cache/`, or the current repo's `plugins/` directory
+   - If the only discovered copy is under `~/.codex/plugins/cache/`, do not update it. Tell the user:
+     ```
+     Found only Codex's runtime cache copy of quarryfi-time-tracker.
+     The updater must run against the marketplace source clone, not the cache.
+     Reinstall or restore the local source clone, then run the update again.
+     ```
 
 2. If the plugin directory is not found, tell the user:
    ```
