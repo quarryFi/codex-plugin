@@ -113,6 +113,16 @@ After installing, confirm two things:
 - Manifest exists at `<plugin-folder>/.codex-plugin/plugin.json`
 - A marketplace file includes an entry pointing to the plugin folder
 
+For development or QA of the hook itself, run the local regression check:
+
+```bash
+cd ~/plugins/quarryfi-time-tracker
+bash -n hooks/track-session.sh
+node tests/hook-regression.mjs
+```
+
+The regression test uses a temporary `~/.quarryfi/config.json` and a local mock heartbeat server. It verifies that Codex hook events send source `"codex"` payloads to all matching profiles with plugin version, runtime channel, hook mode, and install revision diagnostics. GitHub Actions runs the same check on pushes and pull requests.
+
 ## Configuration
 
 This plugin shares `~/.quarryfi/config.json` with the Claude Code plugin. If you use both tools, you only need to configure once.
