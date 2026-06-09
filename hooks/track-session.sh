@@ -452,14 +452,19 @@ NODE
 )
 
     local sent=0
+    local send_pids=""
     while IFS=$'\t' read -r profile_name api_key api_url; do
       [ -z "$api_key" ] && continue
       send_heartbeat_to_profile "$api_key" "$api_url" "$profile_name" "$payload" "$project_name" "$event" &
+      send_pids="${send_pids} $!"
       sent=$((sent + 1))
     done <<< "$matched_profiles"
 
     if [ "$sent" -gt 0 ]; then
-      wait 2>/dev/null || true
+      local pid
+      for pid in $send_pids; do
+        wait "$pid" 2>/dev/null || true
+      done
     else
       append_status_audit "$project_name" "$event" "skipped:no_matching_profile"
     fi
