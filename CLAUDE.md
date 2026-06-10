@@ -7,7 +7,7 @@ quarryFi time tracking plugin for OpenAI Codex (CLI and App). Sends heartbeats t
 ## Architecture
 
 - `.codex-plugin/plugin.json` — Codex plugin manifest (name: `quarryfi-time-tracker`)
-- `hooks/track-session.sh` — Shared lifecycle hook for SessionStart, TaskStarted, PostToolUse, UserPromptSubmit, TaskComplete, and Stop
+- `hooks/track-session.sh` — Shared lifecycle hook for SessionStart, PostToolUse, UserPromptSubmit, and Stop
 - `skills/quarryfi-status/SKILL.md` — Status check skill
 - `skills/quarryfi-update/SKILL.md` — Self-update skill (git pull from inside Codex)
 - `setup.sh` — Interactive multi-profile config setup

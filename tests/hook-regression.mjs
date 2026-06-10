@@ -9,11 +9,14 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const hookPath = join(repoRoot, "hooks", "track-session.sh");
 const manifest = JSON.parse(readFileSync(join(repoRoot, ".codex-plugin", "plugin.json"), "utf8"));
+const hooksConfig = JSON.parse(readFileSync(join(repoRoot, "hooks.json"), "utf8"));
 const tmpHome = mkdtempSync(join(tmpdir(), "quarryfi-codex-hook-"));
 const projectRoot = join(tmpHome, "work", "client-a");
 const projectDir = join(projectRoot, "app");
 const configDir = join(tmpHome, ".quarryfi");
 const received = [];
+
+assertSupportedCodexHooks();
 
 mkdirSync(projectDir, { recursive: true });
 mkdirSync(configDir, { recursive: true });
@@ -79,6 +82,32 @@ try {
   stopHookTimers();
   await new Promise((resolveClose) => server.close(resolveClose));
   rmSync(tmpHome, { recursive: true, force: true });
+}
+
+function assertSupportedCodexHooks() {
+  const supportedEvents = new Set([
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "PreCompact",
+    "PostCompact",
+    "UserPromptSubmit",
+    "SubagentStart",
+    "SubagentStop",
+    "SessionStart",
+    "Stop",
+  ]);
+
+  for (const eventName of Object.keys(hooksConfig.hooks ?? {})) {
+    assert.ok(supportedEvents.has(eventName), `${eventName} is not a supported Codex hook event`);
+  }
+
+  const postToolUseGroups = hooksConfig.hooks?.PostToolUse ?? [];
+  assert.ok(postToolUseGroups.length > 0, "PostToolUse hook must be registered");
+  assert.ok(
+    postToolUseGroups.some((group) => group.matcher === "*" || group.matcher === undefined),
+    "PostToolUse must match all current Codex tool names"
+  );
 }
 
 function runHook(args) {

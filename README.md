@@ -244,10 +244,12 @@ The plugin hooks into Codex lifecycle events and keeps a 60-second timer alive w
 | Event | Action |
 |-------|--------|
 | `SessionStart` | Sends a session-start heartbeat and starts the timer |
-| `TaskStarted` / `PostToolUse` / `UserPromptSubmit` / `TaskComplete` | Flushes recent activity without double-counting |
+| `PostToolUse` / `UserPromptSubmit` | Flushes recent activity without double-counting |
 | `Stop` | Sends the final heartbeat and clears timer state |
 
 Heartbeats are sent to `POST /api/heartbeat` with source `"codex"`. Multiple profiles are dispatched concurrently. The foreground hook waits only for the network sends it started, while the 60-second timer continues separately in the background; this keeps hooks from hanging and being killed before QuarryFi receives the heartbeat.
+
+Codex hook trust is hash-based. If the plugin updates its hook file, Codex can show the plugin as installed while skipping the changed hooks until they are reviewed. In Codex CLI, run `/hooks`, review the quarryFi hooks, and trust the updated commands. In Codex App, restart the app after updating the plugin so the current hook registration and trust prompts load into a fresh session.
 
 ## Skills
 
@@ -259,7 +261,7 @@ Check your tracking status from within Codex:
 
 Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, the local installed plugin version, and whether any hook fired in the current session.
 
-If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.3.3` or newer.
+If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.3.4` or newer.
 
 ### quarryfi-update
 
