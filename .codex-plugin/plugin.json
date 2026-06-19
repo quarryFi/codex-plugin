@@ -1,6 +1,6 @@
 {
   "name": "quarryfi-time-tracker",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "quarryFi R&D time tracking for OpenAI Codex — multi-company profiles with project routing and audit logging",
   "author": {
     "name": "Smashed Studios LLC",

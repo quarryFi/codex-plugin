@@ -77,6 +77,76 @@ get_cwd() {
   echo "${CODEX_PROJECT_DIR:-${CODEX_CWD:-$(pwd)}}"
 }
 
+resolve_effective_cwd() {
+  local cwd="$1"
+
+  [ ! -f "$CONFIG_FILE" ] && {
+    echo "$cwd"
+    return
+  }
+
+  if ! command -v node >/dev/null 2>&1; then
+    echo "$cwd"
+    return
+  fi
+
+  node - "$CONFIG_FILE" "$cwd" <<'NODE' 2>/dev/null || printf '%s\n' "$cwd"
+const fs = require("fs");
+const [file, cwdArg] = process.argv.slice(2);
+const cwd = String(cwdArg || "");
+const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
+const profiles = Array.isArray(cfg.profiles) ? cfg.profiles.filter(Boolean) : [cfg];
+const keyedProfiles = profiles.filter((profile) => profile && profile.api_key);
+
+function normalizedPath(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
+function projectPaths(profile) {
+  return [
+    ...(Array.isArray(profile.projects) ? profile.projects : []),
+    ...(Array.isArray(profile.project_dirs) ? profile.project_dirs : []),
+    ...(Array.isArray(profile.projectDirs) ? profile.projectDirs : []),
+  ].filter(Boolean).map(normalizedPath);
+}
+
+function matchesProject(path, project) {
+  const prefix = normalizedPath(project);
+  const normalized = normalizedPath(path);
+  return !prefix || normalized === prefix || normalized.startsWith(`${prefix}/`);
+}
+
+function codexDefault(profile) {
+  return profile.codex_default_project ||
+    profile.codexDefaultProject ||
+    profile.codex_default_project_dir ||
+    profile.codexDefaultProjectDir ||
+    profile.codex_default_workspace ||
+    profile.codexDefaultWorkspace ||
+    "";
+}
+
+if (keyedProfiles.some((profile) => {
+  const projects = projectPaths(profile);
+  return projects.length === 0 || projects.some((project) => matchesProject(cwd, project));
+})) {
+  console.log(cwd);
+  process.exit(0);
+}
+
+const defaults = keyedProfiles
+  .map(codexDefault)
+  .filter(Boolean);
+
+if (defaults.length === 1) {
+  console.log(defaults[0]);
+  process.exit(0);
+}
+
+console.log(cwd);
+NODE
+}
+
 session_dir() {
   local cwd="$1"
   local hash
@@ -438,9 +508,17 @@ function matchesProject(project) {
   return !prefix || normalizedCwd === prefix || normalizedCwd.startsWith(`${prefix}/`);
 }
 
+function projectPaths(profile) {
+  return [
+    ...(Array.isArray(profile.projects) ? profile.projects : []),
+    ...(Array.isArray(profile.project_dirs) ? profile.project_dirs : []),
+    ...(Array.isArray(profile.projectDirs) ? profile.projectDirs : []),
+  ].filter(Boolean);
+}
+
 for (const profile of profiles) {
   if (!profile || !profile.api_key) continue;
-  const projects = Array.isArray(profile.projects) ? profile.projects.filter(Boolean) : [];
+  const projects = projectPaths(profile);
   if (projects.length > 0 && !projects.some(matchesProject)) continue;
   console.log([
     profile.name || "unnamed",
@@ -465,6 +543,38 @@ NODE
       for pid in $send_pids; do
         wait "$pid" 2>/dev/null || true
       done
+    elif command -v node >/dev/null 2>&1; then
+      local fallback_profile
+      fallback_profile=$(node - "$CONFIG_FILE" <<'NODE' 2>/dev/null
+const fs = require("fs");
+const [file] = process.argv.slice(2);
+const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
+const profiles = (Array.isArray(cfg.profiles) ? cfg.profiles : [cfg])
+  .filter((profile) => profile && profile.api_key);
+
+if (profiles.length !== 1) process.exit(0);
+
+const profile = profiles[0];
+console.log([
+  profile.name || "unnamed",
+  profile.api_key,
+  profile.api_url || "https://quarryfi.smashedstudiosllc.workers.dev",
+].join("\t"));
+NODE
+)
+      if [ -n "$fallback_profile" ]; then
+        while IFS=$'\t' read -r profile_name api_key api_url; do
+          [ -z "$api_key" ] && continue
+          send_heartbeat_to_profile "$api_key" "$api_url" "$profile_name" "$payload" "$project_name" "$event" &
+          send_pids="${send_pids} $!"
+          sent=$((sent + 1))
+        done <<< "$fallback_profile"
+        for pid in $send_pids; do
+          wait "$pid" 2>/dev/null || true
+        done
+      else
+        append_status_audit "$project_name" "$event" "skipped:no_matching_profile"
+      fi
     else
       append_status_audit "$project_name" "$event" "skipped:no_matching_profile"
     fi
@@ -540,6 +650,7 @@ run_timer_loop() {
 main() {
   local cwd session_id raw_event event_type now_ts duration_seconds
   cwd=$(get_cwd)
+  cwd=$(resolve_effective_cwd "$cwd")
   [ -z "$cwd" ] && exit 0
   ensure_session_dir "$(session_dir "$cwd")"
 

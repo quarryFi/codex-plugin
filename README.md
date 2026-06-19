@@ -144,7 +144,8 @@ The setup wizard walks you through creating profiles interactively. You'll need 
       "name": "Acme Corp",
       "api_key": "qf_...",
       "api_url": "https://quarryfi.smashedstudiosllc.workers.dev",
-      "projects": ["/Users/me/work/acme-api", "/Users/me/work/acme-frontend"]
+      "projects": ["/Users/me/work/acme-api", "/Users/me/work/acme-frontend"],
+      "codex_default_project": "/Users/me/work/acme-api"
     },
     {
       "name": "Personal",
@@ -157,6 +158,8 @@ The setup wizard walks you through creating profiles interactively. You'll need 
 ```
 
 Each profile maps an API key to specific project directories. When a hook fires, the script matches the current working directory against profiles and sends heartbeats to all matching endpoints.
+
+The plugin accepts both `"projects"` and `"project_dirs"` arrays so it can share configuration with the Claude Code tracker. For Codex Desktop sessions that report a display-name workspace instead of a real project path, set `"codex_default_project"` on a single-company profile. The hook will use that path for project metadata and routing when the reported Codex cwd does not match any configured project.
 
 ### Multi-Company Setup
 

@@ -13,14 +13,23 @@ const hooksConfig = JSON.parse(readFileSync(join(repoRoot, "hooks.json"), "utf8"
 const tmpHome = mkdtempSync(join(tmpdir(), "quarryfi-codex-hook-"));
 const projectRoot = join(tmpHome, "work", "client-a");
 const projectDir = join(projectRoot, "app");
+const projectDirsRoot = join(tmpHome, "work", "client-b");
+const projectDirsDir = join(projectDirsRoot, "app");
+const codexFallbackDir = join(tmpHome, "work", "codex-default", "quarryfi");
+const pseudoCodexDir = join(tmpHome, "New Flow");
 const configDir = join(tmpHome, ".quarryfi");
 const received = [];
 
 assertSupportedCodexHooks();
 
 mkdirSync(projectDir, { recursive: true });
+mkdirSync(projectDirsDir, { recursive: true });
+mkdirSync(codexFallbackDir, { recursive: true });
+mkdirSync(pseudoCodexDir, { recursive: true });
 mkdirSync(configDir, { recursive: true });
 writeFileSync(join(projectDir, "package.json"), "{}\n");
+writeFileSync(join(projectDirsDir, "package.json"), "{}\n");
+writeFileSync(join(codexFallbackDir, "package.json"), "{}\n");
 
 const server = createServer((request, response) => {
   let body = "";
@@ -49,6 +58,7 @@ try {
     JSON.stringify({
       profiles: [
         { name: "Client A", api_key: "qf_client_a", api_url: apiUrl, projects: [projectRoot] },
+        { name: "Client B", api_key: "qf_client_b", api_url: apiUrl, project_dirs: [projectDirsRoot] },
         { name: "Catch All", api_key: "qf_catch_all", api_url: apiUrl, projects: [] },
         { name: "Other Client", api_key: "qf_other", api_url: apiUrl, projects: [join(tmpHome, "other")] },
       ],
@@ -78,6 +88,38 @@ try {
     assert.equal(heartbeat.project_name, "app");
     assert.equal(heartbeat.language, "javascript");
   }
+
+  received.length = 0;
+  const projectDirsResult = await runHook(["UserPromptSubmit", projectDirsDir, "ci-project-dirs-session"], projectDirsDir);
+  assert.equal(projectDirsResult.code, 0, projectDirsResult.stderr);
+  assert.deepEqual(
+    received.map((request) => request.authorization).sort(),
+    ["Bearer qf_catch_all", "Bearer qf_client_b"]
+  );
+  assert.equal(received[0].body.heartbeats[0].project_name, "app");
+
+  received.length = 0;
+  writeFileSync(
+    join(configDir, "config.json"),
+    JSON.stringify({
+      profiles: [
+        {
+          name: "Solo Company",
+          api_key: "qf_solo",
+          api_url: apiUrl,
+          projects: [join(tmpHome, "unmatched", "root")],
+          codex_default_project: codexFallbackDir,
+        },
+      ],
+    }, null, 2)
+  );
+
+  const fallbackResult = await runHook(["UserPromptSubmit", pseudoCodexDir, "ci-fallback-session"], pseudoCodexDir);
+  assert.equal(fallbackResult.code, 0, fallbackResult.stderr);
+  assert.equal(received.length, 1);
+  assert.equal(received[0].authorization, "Bearer qf_solo");
+  assert.equal(received[0].body.heartbeats[0].project_name, "quarryfi");
+  assert.equal(received[0].body.heartbeats[0].language, "javascript");
 } finally {
   stopHookTimers();
   await new Promise((resolveClose) => server.close(resolveClose));
@@ -110,10 +152,10 @@ function assertSupportedCodexHooks() {
   );
 }
 
-function runHook(args) {
+function runHook(args, cwd = projectDir) {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn("bash", [hookPath, ...args], {
-      cwd: projectDir,
+      cwd,
       env: {
         ...process.env,
         HOME: tmpHome,
