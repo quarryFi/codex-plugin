@@ -21,6 +21,7 @@ const configDir = join(tmpHome, ".quarryfi");
 const received = [];
 
 assertSupportedCodexHooks();
+assertProductionHostname();
 
 mkdirSync(projectDir, { recursive: true });
 mkdirSync(projectDirsDir, { recursive: true });
@@ -150,6 +151,19 @@ function assertSupportedCodexHooks() {
     postToolUseGroups.some((group) => group.matcher === "*" || group.matcher === undefined),
     "PostToolUse must match all current Codex tool names"
   );
+}
+
+function assertProductionHostname() {
+  const retiredHostname = "quarryfi.smashedstudiosllc.workers.dev";
+  for (const relativePath of [
+    ".codex-plugin/plugin.json",
+    "hooks/track-session.sh",
+    "setup.sh",
+    "skills/quarryfi-status/SKILL.md",
+  ]) {
+    const contents = readFileSync(join(repoRoot, relativePath), "utf8");
+    assert.ok(!contents.includes(retiredHostname), `${relativePath} must not use the retired workers.dev hostname`);
+  }
 }
 
 function runHook(args, cwd = projectDir) {

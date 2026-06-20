@@ -7,7 +7,7 @@ set -euo pipefail
 
 CONFIG_DIR="$HOME/.quarryfi"
 CONFIG_FILE="$CONFIG_DIR/config.json"
-DEFAULT_API_URL="https://quarryfi.smashedstudiosllc.workers.dev"
+DEFAULT_API_URL="https://quarryfi.com"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

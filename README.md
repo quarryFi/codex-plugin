@@ -11,7 +11,7 @@ Supports **multiple company profiles** with project-to-key routing — freelance
 1. Open the **Plugin Directory** (sidebar or settings)
 2. Switch the marketplace source to **Personal Plugins** (if you've registered the plugin locally — see below) or search for **quarryfi**
 3. Find **quarryFi Time Tracker** and click **Add to Codex**
-4. If prompted to authenticate, enter your quarryFi API key (get one from your [dashboard](https://quarryfi.smashedstudiosllc.workers.dev/dashboard))
+4. If prompted to authenticate, enter your quarryFi API key (get one from your [dashboard](https://quarryfi.com/dashboard))
 5. The plugin is active immediately — bundled skills and hooks start working as soon as it's installed
 
 You can enable/disable the plugin at any time from the plugin directory. Codex stores your preference in `~/.codex/config.toml`.
@@ -133,7 +133,7 @@ This plugin shares `~/.quarryfi/config.json` with the Claude Code plugin. If you
 curl -fsSL https://raw.githubusercontent.com/quarryFi/codex-plugin/main/setup.sh | bash
 ```
 
-The setup wizard walks you through creating profiles interactively. You'll need your API key from your [quarryFi dashboard](https://quarryfi.smashedstudiosllc.workers.dev/dashboard).
+The setup wizard walks you through creating profiles interactively. You'll need your API key from your [quarryFi dashboard](https://quarryfi.com/dashboard).
 
 ### Config Format
 
@@ -143,14 +143,14 @@ The setup wizard walks you through creating profiles interactively. You'll need 
     {
       "name": "Acme Corp",
       "api_key": "qf_...",
-      "api_url": "https://quarryfi.smashedstudiosllc.workers.dev",
+      "api_url": "https://quarryfi.com",
       "projects": ["/Users/me/work/acme-api", "/Users/me/work/acme-frontend"],
       "codex_default_project": "/Users/me/work/acme-api"
     },
     {
       "name": "Personal",
       "api_key": "qf_...",
-      "api_url": "https://quarryfi.smashedstudiosllc.workers.dev",
+      "api_url": "https://quarryfi.com",
       "projects": []
     }
   ]
@@ -185,13 +185,13 @@ If you work for multiple companies, each with their own quarryFi account:
     {
       "name": "Acme Corp",
       "api_key": "qf_acme_key_here",
-      "api_url": "https://quarryfi.smashedstudiosllc.workers.dev",
+      "api_url": "https://quarryfi.com",
       "projects": ["/Users/me/clients/acme"]
     },
     {
       "name": "Beta Inc",
       "api_key": "qf_beta_key_here",
-      "api_url": "https://quarryfi.smashedstudiosllc.workers.dev",
+      "api_url": "https://quarryfi.com",
       "projects": ["/Users/me/clients/beta"]
     }
   ]
@@ -205,7 +205,7 @@ The old single-key format is still supported:
 ```json
 {
   "api_key": "qf_...",
-  "api_url": "https://quarryfi.smashedstudiosllc.workers.dev"
+  "api_url": "https://quarryfi.com"
 }
 ```
 

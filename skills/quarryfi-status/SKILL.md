@@ -60,7 +60,7 @@ quarryFi R&D Tracking Status
 ═════════════════════════════
 
 Profile: Acme Corp
-  API:       https://quarryfi.smashedstudiosllc.workers.dev
+  API:       https://quarryfi.com
   Projects:  /Users/me/work/acme-api, /Users/me/work/acme-frontend
   Match:     ✓ (current directory matches)
   Today:     2h 34m
@@ -68,7 +68,7 @@ Profile: Acme Corp
   Sessions:  3 today
 
 Profile: Personal Projects
-  API:       https://quarryfi.smashedstudiosllc.workers.dev
+  API:       https://quarryfi.com
   Projects:  all (catch-all)
   Match:     ✗
   Today:     0h 45m
