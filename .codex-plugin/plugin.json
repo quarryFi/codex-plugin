@@ -1,6 +1,6 @@
 {
   "name": "quarryfi-time-tracker",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "quarryFi R&D time tracking for OpenAI Codex — multi-company profiles with project routing and audit logging",
   "author": {
     "name": "Smashed Studios LLC",
@@ -11,6 +11,7 @@
   "license": "MIT",
   "keywords": ["time-tracking", "r&d", "tax-credits", "quarryfi"],
   "skills": "./skills/",
+  "hooks": "./hooks.json",
   "interface": {
     "displayName": "quarryFi Time Tracker",
     "shortDescription": "Track R&D time in Codex for tax credit documentation",

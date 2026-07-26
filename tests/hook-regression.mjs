@@ -21,6 +21,7 @@ const configDir = join(tmpHome, ".quarryfi");
 const received = [];
 
 assertSupportedCodexHooks();
+assertHookBundleIsDeclared();
 assertProductionHostname();
 
 mkdirSync(projectDir, { recursive: true });
@@ -150,6 +151,14 @@ function assertSupportedCodexHooks() {
   assert.ok(
     postToolUseGroups.some((group) => group.matcher === "*" || group.matcher === undefined),
     "PostToolUse must match all current Codex tool names"
+  );
+}
+
+function assertHookBundleIsDeclared() {
+  assert.equal(
+    manifest.hooks,
+    "./hooks.json",
+    "plugin.json must declare the bundled hooks.json file so Codex registers lifecycle tracking"
   );
 }
 
