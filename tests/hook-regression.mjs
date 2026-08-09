@@ -22,6 +22,7 @@ const received = [];
 
 assertSupportedCodexHooks();
 assertHookBundleIsDeclared();
+assertHookCommandsUsePluginRoot();
 assertProductionHostname();
 
 mkdirSync(projectDir, { recursive: true });
@@ -160,6 +161,20 @@ function assertHookBundleIsDeclared() {
     "./hooks.json",
     "plugin.json must declare the bundled hooks.json file so Codex registers lifecycle tracking"
   );
+}
+
+function assertHookCommandsUsePluginRoot() {
+  for (const [eventName, groups] of Object.entries(hooksConfig.hooks ?? {})) {
+    for (const group of groups) {
+      for (const hook of group.hooks ?? []) {
+        assert.match(
+          hook.command,
+          /^"\$PLUGIN_ROOT\/hooks\/track-session\.sh" /,
+          `${eventName} must resolve track-session.sh from PLUGIN_ROOT because Codex runs hooks from the session cwd`
+        );
+      }
+    }
+  }
 }
 
 function assertProductionHostname() {
