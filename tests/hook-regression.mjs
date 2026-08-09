@@ -93,6 +93,20 @@ try {
   }
 
   received.length = 0;
+  const manifestResult = await runManifestHook({
+    eventName: "UserPromptSubmit",
+    cwd: projectDir,
+    sessionId: "ci-manifest-session",
+  });
+  assert.equal(manifestResult.code, 0, manifestResult.stderr);
+  assert.equal(received.length, 2, "the manifest command must run successfully from the project cwd");
+  for (const request of received) {
+    assert.equal(request.body.client.plugin_version, manifest.version);
+    assert.equal(request.body.heartbeats[0].source, "codex");
+    assert.equal(request.body.heartbeats[0].session_id, "ci-manifest-session");
+  }
+
+  received.length = 0;
   const projectDirsResult = await runHook(["UserPromptSubmit", projectDirsDir, "ci-project-dirs-session"], projectDirsDir);
   assert.equal(projectDirsResult.code, 0, projectDirsResult.stderr);
   assert.deepEqual(
@@ -208,6 +222,46 @@ function runHook(args, cwd = projectDir) {
       rejectRun(new Error("hook regression timed out"));
     }, 8000);
 
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", rejectRun);
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      resolveRun({ code, stdout, stderr });
+    });
+  });
+}
+
+function runManifestHook({ eventName, cwd, sessionId }) {
+  const command = hooksConfig.hooks[eventName][0].hooks[0].command;
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn("bash", ["-lc", command], {
+      cwd,
+      env: {
+        ...process.env,
+        HOME: tmpHome,
+        CODEX_CLIENT: "app",
+        PLUGIN_ROOT: repoRoot,
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      rejectRun(new Error("manifest hook regression timed out"));
+    }, 8000);
+
+    child.stdin.end(JSON.stringify({
+      hook_event_name: eventName,
+      cwd,
+      session_id: sessionId,
+      permission_mode: "default",
+    }));
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
     });

@@ -12,7 +12,9 @@ Supports **multiple company profiles** with project-to-key routing — freelance
 2. Switch the marketplace source to **Personal Plugins** (if you've registered the plugin locally — see below) or search for **quarryfi**
 3. Find **quarryFi Time Tracker** and click **Add to Codex**
 4. If prompted to authenticate, enter your quarryFi API key (get one from your [dashboard](https://quarryfi.com/dashboard))
-5. The plugin is active immediately — bundled skills and hooks start working as soon as it's installed
+5. Fully restart the Codex App or start a new Codex CLI session so the installed version is loaded
+6. Review and trust the four quarryFi lifecycle hooks when prompted; in Codex CLI, use `/hooks` if the prompt was dismissed
+7. Ask Codex to "Check my quarryFi R&D tracking status" and confirm Codex reports `receiving`
 
 You can enable/disable the plugin at any time from the plugin directory. Codex stores your preference in `~/.codex/config.toml`.
 Installing from Personal Plugins does not mean Codex will auto-pull future GitHub changes. If the plugin lives in a local clone, that local clone still needs to be updated.
@@ -265,7 +267,7 @@ Check your tracking status from within Codex:
 
 Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, the local installed plugin version, and whether any hook fired in the current session.
 
-If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.3.8` or newer.
+If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.3.9` or newer.
 
 ### quarryfi-update
 
