@@ -472,6 +472,27 @@ build_payload() {
 EOF
 }
 
+maybe_emit_update_notice() {
+  local response_file="$1"
+  local source="$2"
+  [ ! -s "$response_file" ] && return
+  grep -Eq '"updateAvailable"[[:space:]]*:[[:space:]]*true' "$response_file" 2>/dev/null || return
+
+  local latest_version update_url safe_version notice_dir notice_file
+  latest_version=$(grep -o '"latestVersion"[[:space:]]*:[[:space:]]*"[^"]*"' "$response_file" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)"/\1/')
+  update_url=$(grep -o '"updateUrl"[[:space:]]*:[[:space:]]*"[^"]*"' "$response_file" 2>/dev/null | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)"/\1/')
+  safe_version=$(printf '%s' "$latest_version" | tr -cd '0-9A-Za-z._-')
+  [ -z "$safe_version" ] && return
+
+  notice_dir="$CONFIG_DIR/update-notices"
+  notice_file="$notice_dir/${source}-${safe_version}"
+  mkdir -p "$notice_dir" 2>/dev/null || return
+  find "$notice_dir" -type f -mtime +30 -delete 2>/dev/null || true
+  [ -f "$notice_file" ] && return
+  : > "$notice_file"
+  printf '[QuarryFi] Tracker update v%s available: %s\n' "$latest_version" "$update_url" >&2
+}
+
 send_heartbeat_to_profile() {
   local api_key="$1"
   local api_url="$2"
@@ -480,8 +501,10 @@ send_heartbeat_to_profile() {
   local project_name="$5"
   local event_name="$6"
 
-  local http_status
-  http_status=$(curl -s -o /dev/null -w "%{http_code}" \
+  local http_status response_file
+  response_file=$(mktemp "${TMPDIR:-/tmp}/quarryfi-heartbeat.XXXXXX" 2>/dev/null || true)
+  [ -z "$response_file" ] && response_file="/dev/null"
+  http_status=$(curl -s -o "$response_file" -w "%{http_code}" \
     --max-time 5 \
     -X POST \
     -H "Authorization: Bearer ${api_key}" \
@@ -491,10 +514,12 @@ send_heartbeat_to_profile() {
 
   append_audit "$profile_name" "$payload" "$api_url" "$http_status"
   if [ "$http_status" = "200" ] || [ "$http_status" = "201" ] || [ "$http_status" = "204" ]; then
+    maybe_emit_update_notice "$response_file" "codex"
     append_status_audit "$project_name" "$event_name" "sent"
   else
     append_status_audit "$project_name" "$event_name" "error:${http_status}"
   fi
+  [ "$response_file" != "/dev/null" ] && rm -f "$response_file"
 }
 
 is_legacy_config() {

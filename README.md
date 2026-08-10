@@ -222,6 +222,7 @@ When detected, it's treated as one profile that matches all projects. Running `s
 - **Branch** — current git branch
 - **Language** — best-effort detection from project files
 - **Runtime diagnostics** — plugin version, runtime channel, hook mode, and install revision so QuarryFi can tell a stale install from a healthy one
+- **Update cues** — QuarryFi can return a non-blocking version notice after a successful heartbeat; the hook shows it once per release and automatically removes local notice markers after 30 days
 
 ### Audit Log
 
@@ -269,7 +270,7 @@ Check your tracking status from within Codex:
 
 Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, the local installed plugin version, and whether any hook fired in the current session.
 
-If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.0` or newer.
+If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.1` or newer.
 
 ### quarryfi-update
 
