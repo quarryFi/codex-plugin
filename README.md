@@ -237,8 +237,8 @@ Every heartbeat is appended to `~/.quarryfi/audit.log` as one JSON line per even
 
 ### Privacy
 
-- Only project-level metadata is sent (project name, branch, duration) plus minimal runtime diagnostics (plugin version, runtime channel, hook mode, install revision)
-- No source code, file contents, prompts, or AI responses are transmitted
+- Only project-level metadata is sent (project name, branch, duration, Git HEAD, hashed repository identity, changed-file count, and coarse activity category) plus minimal runtime diagnostics (plugin version, runtime channel, hook mode, install revision)
+- Source code, diffs, prompts, commands, command output, raw repository URLs, filenames, local paths, and AI responses are never transmitted
 - Data goes only to the API URL configured in each profile
 - All tracking runs silently — errors never interrupt your workflow
 - The local audit log stays on your machine and is never transmitted
@@ -255,6 +255,8 @@ The plugin hooks into Codex lifecycle events and keeps a 60-second timer alive w
 
 Heartbeats are sent to `POST /api/heartbeat` with source `"codex"`. Multiple profiles are dispatched concurrently. The foreground hook waits only for the network sends it started, while the 60-second timer continues separately in the background; this keeps hooks from hanging and being killed before QuarryFi receives the heartbeat.
 
+For stronger evidence reconciliation, each heartbeat can include the current Git commit SHA, a one-way hash of the GitHub `owner/repository` name, a changed-file count, and a coarse activity category. The plugin does not send source code, diffs, prompts, commands, command output, raw repository URLs, filenames, or local paths.
+
 Codex hook trust is hash-based. If the plugin updates its hook file, Codex can show the plugin as installed while skipping the changed hooks until they are reviewed. In Codex CLI, run `/hooks`, review the quarryFi hooks, and trust the updated commands. In Codex App, restart the app after updating the plugin so the current hook registration and trust prompts load into a fresh session.
 
 ## Skills
@@ -267,7 +269,7 @@ Check your tracking status from within Codex:
 
 Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, the local installed plugin version, and whether any hook fired in the current session.
 
-If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.3.9` or newer.
+If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.0` or newer.
 
 ### quarryfi-update
 

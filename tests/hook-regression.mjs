@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -31,6 +32,12 @@ mkdirSync(codexFallbackDir, { recursive: true });
 mkdirSync(pseudoCodexDir, { recursive: true });
 mkdirSync(configDir, { recursive: true });
 writeFileSync(join(projectDir, "package.json"), "{}\n");
+execFileSync("git", ["init", "-q", projectDir]);
+execFileSync("git", ["-C", projectDir, "config", "user.email", "tracker-test@quarryfi.test"]);
+execFileSync("git", ["-C", projectDir, "config", "user.name", "QuarryFi Tracker Test"]);
+execFileSync("git", ["-C", projectDir, "add", "package.json"]);
+execFileSync("git", ["-C", projectDir, "commit", "-qm", "test fixture"]);
+execFileSync("git", ["-C", projectDir, "remote", "add", "origin", "git@github.com:QuarryFi/private-example.git"]);
 writeFileSync(join(projectDirsDir, "package.json"), "{}\n");
 writeFileSync(join(codexFallbackDir, "package.json"), "{}\n");
 
@@ -90,6 +97,13 @@ try {
     assert.equal(heartbeat.session_id, "ci-session");
     assert.equal(heartbeat.project_name, "app");
     assert.equal(heartbeat.language, "javascript");
+    assert.match(heartbeat.head_sha, /^[a-f0-9]{40}$/);
+    assert.match(heartbeat.repo_fingerprint, /^[a-f0-9]{64}$/);
+    assert.equal(heartbeat.activity_kind, "implementation");
+    assert.equal(heartbeat.changed_file_count, 0);
+    for (const forbidden of ["source_code", "diff", "prompt", "command", "file_path", "remote_url"]) {
+      assert.equal(forbidden in heartbeat, false, `heartbeat must not include ${forbidden}`);
+    }
   }
 
   received.length = 0;

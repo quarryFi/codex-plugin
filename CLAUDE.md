@@ -54,6 +54,8 @@ Every heartbeat request should also include a top-level `client` object with:
 
 These are used only for runtime health diagnostics. They must never include prompts, code, or file contents.
 
+Trackers may also send the current Git commit SHA, a SHA-256 digest of the lowercase GitHub `owner/repository` name, a changed-file count, and one coarse activity enum. Never send raw remotes, local paths, filenames, diffs, prompts, commands, command output, or source code.
+
 ### Session files use stable paths, not PID
 
 Session files live under `~/.quarryfi/session-codex-{hash}` where hash is derived from `shasum` of the project directory. NEVER use `$$` (PID) — each hook invocation is a separate process.

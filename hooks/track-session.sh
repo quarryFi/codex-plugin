@@ -316,6 +316,44 @@ get_branch() {
   git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown"
 }
 
+get_head_sha() {
+  git -C "$1" rev-parse HEAD 2>/dev/null | grep -E '^[a-fA-F0-9]{7,64}$' || true
+}
+
+get_repo_fingerprint() {
+  local cwd="$1" remote canonical
+  remote=$(git -C "$cwd" config --get remote.origin.url 2>/dev/null || true)
+  case "$remote" in
+    *github.com:*) canonical=${remote#*github.com:} ;;
+    *github.com/*) canonical=${remote#*github.com/} ;;
+    *) return ;;
+  esac
+  canonical=$(printf '%s' "$canonical" | sed 's/\.git$//' | tr '[:upper:]' '[:lower:]')
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$canonical" | shasum -a 256 | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$canonical" | sha256sum | awk '{print $1}'
+  fi
+}
+
+get_changed_file_count() {
+  local count
+  count=$(git -C "$1" status --porcelain --untracked-files=no 2>/dev/null | wc -l | tr -d ' ')
+  case "$count" in ''|*[!0-9]*) echo 0 ;; *) [ "$count" -gt 10000 ] && echo 10000 || echo "$count" ;; esac
+}
+
+get_activity_kind() {
+  local value
+  value=$(printf '%s' "$EVENT_FILE_PATH_FROM_JSON" | tr '[:upper:]' '[:lower:]')
+  case "$value" in
+    *'/test/'*|*'/tests/'*|*'__tests__'*|*'.test.'*|*'.spec.'*) echo "test" ;;
+    *migration*|*schema*|*.sql) echo "schema" ;;
+    *.md|*.markdown|*.rst) echo "documentation" ;;
+    *.json|*.yaml|*.yml|*.toml|*.ini|*.env) echo "configuration" ;;
+    *) echo "implementation" ;;
+  esac
+}
+
 get_language() {
   local dir="$1"
 
@@ -421,9 +459,16 @@ build_payload() {
   local runtime_channel="${11}"
   local install_revision="${12}"
   local host_app="${13}"
+  local head_sha="${14}"
+  local repo_fingerprint="${15}"
+  local activity_kind="${16}"
+  local changed_file_count="${17}"
+  local head_fragment="" repo_fragment=""
+  [ -n "$head_sha" ] && head_fragment=",\"head_sha\":\"${head_sha}\""
+  [ -n "$repo_fingerprint" ] && repo_fragment=",\"repo_fingerprint\":\"${repo_fingerprint}\""
 
   cat <<EOF
-{"client":{"plugin_version":"${plugin_version}","runtime_channel":"${runtime_channel}","hook_mode":"${HOOK_MODE}","install_revision":"${install_revision}","host_app":"${host_app}"},"heartbeats":[{"source":"codex","project_name":"${project_name}","language":"${language}","file_type":"${file_type}","branch":"${branch}","editor":"${editor}","timestamp":"${now}","duration_seconds":${duration},"session_id":"${session_id}","event":"${event}"}]}
+{"client":{"plugin_version":"${plugin_version}","runtime_channel":"${runtime_channel}","hook_mode":"${HOOK_MODE}","install_revision":"${install_revision}","host_app":"${host_app}"},"heartbeats":[{"source":"codex","project_name":"${project_name}","language":"${language}","file_type":"${file_type}","branch":"${branch}","editor":"${editor}","timestamp":"${now}","duration_seconds":${duration},"session_id":"${session_id}","event":"${event}"${head_fragment}${repo_fragment},"activity_kind":"${activity_kind}","changed_file_count":${changed_file_count}}]}
 EOF
 }
 
@@ -467,7 +512,7 @@ dispatch_to_profiles() {
   [ ! -f "$CONFIG_FILE" ] && return
 
   local now project_name editor branch language file_type payload
-  local plugin_version runtime_channel install_revision host_app
+  local plugin_version runtime_channel install_revision host_app head_sha repo_fingerprint activity_kind changed_file_count
   now=$(timestamp_utc)
   project_name=$(get_project_name "$cwd")
   editor=$(get_editor)
@@ -478,8 +523,12 @@ dispatch_to_profiles() {
   runtime_channel=$(get_runtime_channel)
   install_revision=$(get_install_revision)
   host_app=$(printf '%s' "$editor" | tr '[:upper:] ' '[:lower:]_' | tr -s '_')
+  head_sha=$(get_head_sha "$cwd")
+  repo_fingerprint=$(get_repo_fingerprint "$cwd")
+  activity_kind=$(get_activity_kind)
+  changed_file_count=$(get_changed_file_count "$cwd")
   append_status_audit "$project_name" "$event" "hook_fired"
-  payload=$(build_payload "$event" "$duration" "$now" "$session_id" "$project_name" "$editor" "$branch" "$language" "$file_type" "$plugin_version" "$runtime_channel" "$install_revision" "$host_app")
+  payload=$(build_payload "$event" "$duration" "$now" "$session_id" "$project_name" "$editor" "$branch" "$language" "$file_type" "$plugin_version" "$runtime_channel" "$install_revision" "$host_app" "$head_sha" "$repo_fingerprint" "$activity_kind" "$changed_file_count")
 
   if is_legacy_config; then
     local config_content api_key api_url
