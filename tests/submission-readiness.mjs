@@ -13,9 +13,20 @@ const statusSkill = read("skills/quarryfi-status/SKILL.md");
 const submission = read("docs/openai-directory-submission.md");
 
 assert.equal(manifest.name, "quarryfi-time-tracker");
-assert.equal(manifest.version, "0.4.4");
+assert.equal(manifest.version, "0.4.5");
 assert.equal(manifest.license, "MIT");
 assert.match(manifest.interface.longDescription, /does not determine tax-credit eligibility/i);
+assert.equal(manifest.interface.composerIcon, "./assets/quarryfi-mark.png");
+assert.equal(manifest.interface.logo, "./assets/quarryfi-mark.png");
+assert.equal(manifest.interface.logoDark, "./assets/quarryfi-mark.png");
+assert.ok(manifest.interface.shortDescription.length <= 30);
+assert.equal(manifest.interface.defaultPrompt.length, 3);
+for (const assetPath of [manifest.interface.composerIcon, manifest.interface.logo, manifest.interface.logoDark]) {
+  const asset = join(root, assetPath.replace(/^\.\//, ""));
+  assert.equal(existsSync(asset), true, `${assetPath} must exist`);
+  const png = readFileSync(asset);
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+}
 assert.equal(existsSync(join(root, "LICENSE")), true);
 assert.equal(existsSync(join(root, "SECURITY.md")), true);
 assert.ok((statSync(join(root, "setup.sh")).mode & 0o111) !== 0, "setup.sh must be executable");
