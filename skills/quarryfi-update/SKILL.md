@@ -1,9 +1,9 @@
 ---
 name: quarryfi-update
-description: Refresh the local quarryFi plugin install from GitHub
+description: Refresh the local QuarryFi plugin install from GitHub
 ---
 
-Refresh the local quarryFi time tracking plugin install by pulling the latest changes from GitHub into the folder Codex is currently using.
+Refresh the local QuarryFi time tracking plugin install by pulling the latest changes from GitHub into the folder Codex is currently using.
 
 ## Safety invariant
 
@@ -46,7 +46,7 @@ Keep three locations distinct:
 4. Before pulling, protect against dirty or half-updated checkouts:
    - If `$STATUS` is non-empty and `git diff --quiet origin/main` succeeds, the files on disk already match the remote but git metadata is stale. Tell the user:
      ```
-     quarryFi plugin files already match GitHub, but the local git branch is stale.
+     QuarryFi plugin files already match GitHub, but the local git branch is stale.
      This indicates an out-of-band file sync or interrupted update.
      Repairing git metadata only; file contents will not change.
      ```
@@ -57,7 +57,7 @@ Keep three locations distinct:
      After that, recompute `LOCAL`, `REMOTE`, and `STATUS`.
    - If `$STATUS` is non-empty and the worktree does not match `origin/main`, do not pull and do not stash automatically. Show `git status --short` and tell the user:
      ```
-     quarryFi plugin update blocked because the plugin checkout has local edits.
+     QuarryFi plugin update blocked because the plugin checkout has local edits.
      Review or stash those edits, then run the update again.
      ```
      If they want to preserve those edits, suggest:
@@ -70,7 +70,7 @@ Keep three locations distinct:
 
 5. If `$LOCAL` equals `$REMOTE` and `$STATUS` is empty, tell the user:
    ```
-   quarryFi plugin is already up to date (version X.Y.Z).
+   QuarryFi plugin is already up to date (version X.Y.Z).
    ```
    Read the version from `.codex-plugin/plugin.json`.
 
@@ -86,7 +86,7 @@ Keep three locations distinct:
 
 8. Read the new version from `.codex-plugin/plugin.json` and show:
    ```
-   ✓ quarryFi plugin updated to vX.Y.Z
+   ✓ QuarryFi plugin updated to vX.Y.Z
 
    Restart the Codex App to load the new version.
    ```

@@ -1,6 +1,6 @@
 ---
 name: quarryfi-status
-description: Check quarryFi R&D tracking status across all configured company profiles
+description: Check QuarryFi R&D tracking status across all configured company profiles
 ---
 
 Show the user's QuarryFi tracking status across all configured profiles, plus the currently installed Codex plugin version and whether hooks have fired recently on this machine.
@@ -56,7 +56,7 @@ Show the user's QuarryFi tracking status across all configured profiles, plus th
 ## Response format
 
 ```
-quarryFi R&D Tracking Status
+QuarryFi R&D Tracking Status
 ═════════════════════════════
 
 Profile: Acme Corp

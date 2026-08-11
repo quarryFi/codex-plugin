@@ -1,26 +1,30 @@
-# quarryFi Codex Plugin
+# QuarryFi Codex Plugin
 
-R&D time tracking for [OpenAI Codex](https://openai.com/codex). Automatically tracks coding sessions in Codex CLI and Codex App, sending heartbeats to your quarryFi account for tax credit documentation.
+R&D time tracking for [OpenAI Codex](https://openai.com/codex). Automatically tracks coding sessions in Codex CLI and Codex App, sending metadata-only heartbeats to your QuarryFi account for tax credit documentation.
 
 Supports **multiple company profiles** with project-to-key routing — freelancers and consultants can track R&D time for different clients from a single config file.
 
 ## Install
 
-### From the Codex App
+### Current public install: Personal Plugins
 
-1. Open the **Plugin Directory** (sidebar or settings)
-2. Switch the marketplace source to **Personal Plugins** (if you've registered the plugin locally — see below) or search for **quarryfi**
-3. Find **quarryFi Time Tracker** and click **Add to Codex**
-4. If prompted to authenticate, enter your quarryFi API key (get one from your [dashboard](https://quarryfi.com/dashboard))
-5. Fully restart the Codex App or start a new Codex CLI session so the installed version is loaded
-6. Review and trust the four quarryFi lifecycle hooks when prompted; in Codex CLI, use `/hooks` if the prompt was dismissed
-7. Ask Codex to "Check my quarryFi R&D tracking status" and confirm Codex reports `receiving`
+QuarryFi is preparing a submission to OpenAI's universal Plugins Directory. Until OpenAI approves and publishes it there, install the tracker from this GitHub repository through Codex's **Personal Plugins** marketplace.
+
+1. Complete the [Home-Local Setup](#home-local-setup-codex-app--codex-cli) below so Codex can discover the GitHub-backed plugin.
+2. In the Codex App, open the **Plugins Directory**. In Codex CLI, run `/plugins`.
+3. Select **Personal Plugins**, open **QuarryFi Time Tracker**, and install it.
+4. Start a new Codex task or CLI session so the installed version is loaded.
+5. Review and trust the four QuarryFi lifecycle hooks when prompted. In Codex CLI, use `/hooks` if that command is available and the trust prompt was dismissed.
+6. Configure a seat-assigned key using [Quick Setup](#quick-setup).
+7. Ask Codex to "Check my QuarryFi R&D tracking status" and confirm Codex reports `receiving`.
 
 You can enable/disable the plugin at any time from the plugin directory. Codex stores your preference in `~/.codex/config.toml`.
-Installing from Personal Plugins does not mean Codex will auto-pull future GitHub changes. If the plugin lives in a local clone, that local clone still needs to be updated.
+Installing from Personal Plugins does not make the local Git clone auto-update. Update that source clone when QuarryFi releases a new version.
 After a local update, fully restart Codex and start a new session so the fresh hook code and skills actually load.
 
-> **First time?** The plugin needs to be registered in a marketplace before it appears in the app. Follow the Home-Local or Repo-Local setup below to make it discoverable, then use the app flow above to install it.
+### After official directory approval
+
+Once OpenAI approves the public listing, users will be able to find QuarryFi in the universal Plugins Directory, install it with the plus button, and start a new task. The GitHub Personal Plugins route remains the supported installation path until that approval is visible in the directory.
 
 ---
 
@@ -136,7 +140,9 @@ This plugin shares `~/.quarryfi/config.json` with the Claude Code plugin. If you
 curl -fsSL https://raw.githubusercontent.com/quarryFi/codex-plugin/main/setup.sh | bash
 ```
 
-The setup wizard walks you through creating profiles interactively. You'll need your API key from your [quarryFi dashboard](https://quarryfi.com/dashboard).
+The setup wizard walks you through creating profiles interactively. You'll need a seat-assigned API key from **Tracking integrations and API keys** on your [QuarryFi Workspace dashboard](https://quarryfi.com/dashboard/team#tracking-plugins).
+
+Tracker keys and accepted heartbeats require an active QuarryFi Core subscription. You can create and explore a Free account before upgrading, but Free accounts cannot generate new tracker keys.
 
 ### Config Format
 
@@ -166,7 +172,7 @@ The plugin accepts both `"projects"` and `"project_dirs"` arrays so it can share
 
 ### Multi-Company Setup
 
-If you work for multiple companies, each with their own quarryFi account:
+If you work for multiple companies, each with their own QuarryFi account:
 
 1. Run `setup.sh` and create a profile for each company
 2. Add the project directories you work on for each company
@@ -258,7 +264,7 @@ Heartbeats are sent to `POST /api/heartbeat` with source `"codex"`. Multiple pro
 
 For stronger evidence reconciliation, each heartbeat can include the current Git commit SHA, a one-way hash of the GitHub `owner/repository` name, a changed-file count, and a coarse activity category. The plugin does not send source code, diffs, prompts, commands, command output, raw repository URLs, filenames, or local paths.
 
-Codex hook trust is hash-based. If the plugin updates its hook file, Codex can show the plugin as installed while skipping the changed hooks until they are reviewed. In Codex CLI, run `/hooks`, review the quarryFi hooks, and trust the updated commands. In Codex App, restart the app after updating the plugin so the current hook registration and trust prompts load into a fresh session.
+Codex hook trust is hash-based. If the plugin updates its hook file, Codex can show the plugin as installed while skipping the changed hooks until they are reviewed. In Codex CLI, run `/hooks` when available, review the QuarryFi hooks, and trust the updated commands. In Codex App, restart the app after updating the plugin so the current hook registration and trust prompts load into a fresh session.
 
 ## Skills
 
@@ -266,25 +272,25 @@ Codex hook trust is hash-based. If the plugin updates its hook file, Codex can s
 
 Check your tracking status from within Codex:
 
-> "Check my quarryFi R&D tracking status"
+> "Check my QuarryFi R&D tracking status"
 
 Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, the local installed plugin version, and whether any hook fired in the current session.
 
-If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.1` or newer.
+If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.2` or newer.
 
 ### quarryfi-update
 
 Update the plugin to the latest version without leaving Codex:
 
-> "Update quarryFi plugin"
+> "Update QuarryFi plugin"
 
 Pulls the latest changes from GitHub into the local plugin folder Codex is using, shows what changed, and reminds you to restart the Codex App. No need to open a terminal, but the restart still matters because personal plugins do not hot-reload mid-session.
 
 ## Updating
 
-There's no background auto-update mechanism in the Codex plugin system yet for local personal plugins. To update:
+Local Git-backed Personal Plugins do not pull new releases in the background. To update:
 
-**From inside Codex** (easiest): just ask "Update quarryFi plugin" — the `quarryfi-update` skill handles it.
+**From inside Codex** (easiest): just ask "Update QuarryFi plugin" — the `quarryfi-update` skill handles it.
 
 **From a terminal**:
 ```bash
@@ -302,7 +308,7 @@ jq -r '.version' ~/plugins/quarryfi-time-tracker/.codex-plugin/plugin.json
 tail -n 20 ~/.quarryfi/audit.log
 ```
 
-Then ask Codex: "Check my quarryFi R&D tracking status". The dashboard/API should show a recent Codex heartbeat after the next hook event.
+Then ask Codex: "Check my QuarryFi R&D tracking status". The dashboard/API should show a recent Codex heartbeat after the next hook event.
 
 If you installed the plugin from a repo-local `plugins/quarryfi-time-tracker` folder instead of `~/plugins`, update that clone instead.
 
@@ -325,7 +331,7 @@ codex-plugin/
 
 ## Compatibility Note
 
-Codex's plugin system launched in March 2026 and is actively evolving. The hook system in this plugin follows the documented lifecycle events. If Codex updates its plugin API, this plugin may need updates — check the [Codex plugin docs](https://developers.openai.com/codex/plugins/build) for the latest spec.
+Codex's plugin system is actively evolving. The hook system in this plugin follows the documented lifecycle events. If Codex updates its plugin API, this plugin may need updates — check the [Codex plugin docs](https://developers.openai.com/codex/plugins/build) for the latest specification.
 
 ## License
 

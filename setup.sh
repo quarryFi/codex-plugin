@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# quarryFi plugin setup — multi-profile configuration
+# QuarryFi plugin setup — multi-profile configuration
 # Writes ~/.quarryfi/config.json with one or more company profiles.
 # Shared by the Claude Code and Codex plugins.
 
@@ -13,7 +13,7 @@ DEFAULT_API_URL="https://quarryfi.com"
 
 print_header() {
   echo ""
-  echo "  quarryFi Plugin Setup"
+  echo "  QuarryFi Plugin Setup"
   echo "  ─────────────────────"
   echo ""
 }
@@ -45,6 +45,9 @@ verify_key() {
   elif [ "$status" = "401" ]; then
     echo "  ✗ API key was rejected."
     return 1
+  elif [ "$status" = "403" ]; then
+    echo "  ✗ Tracker heartbeats require an active QuarryFi Core subscription."
+    return 1
   else
     echo "  ⚠ Could not reach API (HTTP ${status}). Key saved — will retry on next use."
     return 0
@@ -74,8 +77,8 @@ collect_profile() {
 
   # API key
   echo ""
-  echo "  Get your API key from your quarryFi dashboard:"
-  echo "  ${DEFAULT_API_URL}/dashboard"
+  echo "  Get a seat-assigned API key from your QuarryFi Workspace dashboard:"
+  echo "  ${DEFAULT_API_URL}/dashboard/team#tracking-plugins"
   echo ""
   read -rp "  API Key (qf_...): " api_key
   if ! validate_key "$api_key"; then

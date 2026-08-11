@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# quarryFi session tracker for OpenAI Codex
+# QuarryFi session tracker for OpenAI Codex
 #
 # Accuracy-first design:
 # - Event hooks still flush immediately on real Codex activity
