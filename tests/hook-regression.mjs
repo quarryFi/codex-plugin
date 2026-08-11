@@ -22,7 +22,7 @@ const configDir = join(tmpHome, ".quarryfi");
 const received = [];
 
 assertSupportedCodexHooks();
-assertHookBundleIsDeclared();
+assertRootHookBundleIsDiscoverable();
 assertHookCommandsUsePluginRoot();
 assertProductionHostname();
 
@@ -183,11 +183,16 @@ function assertSupportedCodexHooks() {
   );
 }
 
-function assertHookBundleIsDeclared() {
+function assertRootHookBundleIsDiscoverable() {
   assert.equal(
-    manifest.hooks,
-    "./hooks.json",
-    "plugin.json must declare the bundled hooks.json file so Codex registers lifecycle tracking"
+    "hooks" in manifest,
+    false,
+    "plugin.json must omit the unsupported hooks field"
+  );
+  assert.equal(
+    existsSync(join(repoRoot, "hooks.json")),
+    true,
+    "the root hooks.json file must remain available for Codex lifecycle discovery"
   );
 }
 

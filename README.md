@@ -117,7 +117,7 @@ git clone https://github.com/quarryFi/codex-plugin.git plugins/quarryfi-time-tra
 After installing, confirm two things:
 
 - Manifest exists at `<plugin-folder>/.codex-plugin/plugin.json`
-- Manifest declares `"hooks": "./hooks.json"` so Codex registers lifecycle tracking
+- Root `hooks.json` exists so Codex can discover lifecycle tracking without an unsupported manifest field
 - A marketplace file includes an entry pointing to the plugin folder
 
 For development or QA of the hook itself, run the local regression check:
@@ -276,7 +276,7 @@ Check your tracking status from within Codex:
 
 Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, the local installed plugin version, and whether any hook fired in the current session.
 
-If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.2` or newer.
+If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.3` or newer.
 
 ### quarryfi-update
 
