@@ -1,334 +1,155 @@
 #!/usr/bin/env bash
-# QuarryFi plugin setup — multi-profile configuration
-# Writes ~/.quarryfi/config.json with one or more company profiles.
-# Shared by the Claude Code and Codex plugins.
+# QuarryFi Codex plugin setup
+# Writes a privacy-preserving multi-profile config to ~/.quarryfi/config.json.
 
 set -euo pipefail
+umask 077
 
 CONFIG_DIR="$HOME/.quarryfi"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 DEFAULT_API_URL="https://quarryfi.com"
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
-print_header() {
-  echo ""
-  echo "  QuarryFi Plugin Setup"
-  echo "  ─────────────────────"
-  echo ""
-}
-
-validate_key() {
-  local key="$1"
-  if [[ ! "$key" =~ ^qf_[a-f0-9]{40}$ ]]; then
-    echo "  ✗ Invalid key format. Expected: qf_ followed by 40 hex characters."
-    echo "  Example: qf_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
-    return 1
-  fi
-  return 0
-}
-
-verify_key() {
-  local api_key="$1"
-  local api_url="$2"
-  echo "  Verifying API key..."
-  local status
-  status=$(curl -s -o /dev/null -w "%{http_code}" \
-    -H "Authorization: Bearer ${api_key}" \
-    -H "Content-Type: application/json" \
-    -d '{"heartbeats":[{"source":"codex","project_name":"setup-verify","language":"multi","file_type":"multi","branch":"unknown","editor":"Codex CLI","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","duration_seconds":0,"session_id":"setup-'"$$"'"}]}' \
-    "${api_url}/api/heartbeat" 2>/dev/null || echo "000")
-
-  if [ "$status" = "200" ]; then
-    echo "  ✓ API key is valid."
-    return 0
-  elif [ "$status" = "401" ]; then
-    echo "  ✗ API key was rejected."
-    return 1
-  elif [ "$status" = "403" ]; then
-    echo "  ✗ Tracker heartbeats require an active QuarryFi Core subscription."
-    return 1
-  else
-    echo "  ⚠ Could not reach API (HTTP ${status}). Key saved — will retry on next use."
-    return 0
-  fi
-}
-
-# JSON-escape a string (handles quotes and backslashes)
 json_escape() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n\r\t' '   '
 }
 
-# ── Profile collection ───────────────────────────────────────────────────────
+echo ""
+echo "  QuarryFi Codex Tracker Setup"
+echo "  ─────────────────────────────"
+echo ""
 
-collect_profile() {
-  local profile_num="$1"
-
+if [ -f "$CONFIG_FILE" ]; then
+  echo "  Existing config found at $CONFIG_FILE"
+  echo "  The released plugin ignores legacy custom API URLs and always sends"
+  echo "  tracker requests to ${DEFAULT_API_URL}."
+  read -rp "  Replace the existing profiles? [y/N] " overwrite
+  if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
+    echo "  Setup cancelled without changing your config."
+    exit 0
+  fi
   echo ""
-  echo "  ── Profile ${profile_num} ──"
+fi
+
+PROFILES_JSON=""
+profile_count=0
+
+while true; do
+  echo "  ── Profile $((profile_count + 1)) ──"
   echo ""
 
-  # Profile name
   read -rp "  Company/profile name: " profile_name
   if [ -z "$profile_name" ]; then
     echo "  ✗ Name is required."
-    return 1
+    continue
   fi
 
-  # API key
   echo ""
-  echo "  Get a seat-assigned API key from your QuarryFi Workspace dashboard:"
+  echo "  Get a seat-assigned tracker key from your QuarryFi Workspace dashboard:"
   echo "  ${DEFAULT_API_URL}/dashboard/team#tracking-plugins"
+  echo "  Tracker keys and accepted heartbeats require QuarryFi Core."
   echo ""
-  read -rp "  API Key (qf_...): " api_key
-  if ! validate_key "$api_key"; then
-    return 1
+  read -srp "  API Key (input hidden): " api_key
+  echo ""
+
+  if [[ ! "$api_key" =~ ^qf_[a-f0-9]{40}$ ]]; then
+    echo "  ✗ Invalid key format. Expected qf_ plus 40 lowercase hex characters."
+    echo "  This profile was not saved."
+    continue
   fi
 
-  # API URL
-  read -rp "  API URL [${DEFAULT_API_URL}]: " api_url
-  api_url="${api_url:-$DEFAULT_API_URL}"
-
-  # Project directories
   echo ""
-  echo "  Project directories for this profile (one per line, blank to finish)."
-  echo "  Leave empty to match ALL projects (useful for single-company setups)."
+  echo "  Enter project directories for this company, one per line."
+  echo "  Leave the first path blank to match all projects for this profile."
   echo ""
-
-  local projects=()
+  projects_json="["
+  project_count=0
   while true; do
     read -rp "  Project path: " project_path
-    if [ -z "$project_path" ]; then
-      break
-    fi
-    # Expand ~ to $HOME
+    [ -z "$project_path" ] && break
     project_path="${project_path/#\~/$HOME}"
-    # Resolve to absolute path if possible
     if [ -d "$project_path" ]; then
-      project_path=$(cd "$project_path" && pwd)
+      project_path=$(CDPATH= cd -- "$project_path" && pwd)
     fi
-    projects+=("$project_path")
-    echo "  + Added: $project_path"
+    [ "$project_count" -gt 0 ] && projects_json+=", "
+    projects_json+="\"$(json_escape "$project_path")\""
+    project_count=$((project_count + 1))
   done
+  projects_json+="]"
 
-  # Verify key
-  if ! verify_key "$api_key" "$api_url"; then
-    read -rp "  Continue anyway? [y/N] " cont
-    if [[ ! "$cont" =~ ^[Yy]$ ]]; then
-      return 1
-    fi
-  fi
-
-  # Build JSON fragment for this profile
-  local projects_json="[]"
-  if [ ${#projects[@]} -gt 0 ]; then
-    projects_json="["
-    local first=1
-    for p in "${projects[@]}"; do
-      if [ "$first" -eq 1 ]; then first=0; else projects_json+=", "; fi
-      projects_json+="\"$(json_escape "$p")\""
-    done
-    projects_json+="]"
-  fi
-
-  # Store in global array via temp file (bash 3 compat)
-  cat >> "$PROFILES_TMP" <<EOF
+  [ -n "$PROFILES_JSON" ] && PROFILES_JSON+=","
+  PROFILES_JSON+="
     {
-      "name": "$(json_escape "$profile_name")",
-      "api_key": "${api_key}",
-      "api_url": "$(json_escape "$api_url")",
-      "projects": ${projects_json}
-    }
-EOF
+      \"name\": \"$(json_escape "$profile_name")\",
+      \"api_key\": \"${api_key}\",
+      \"api_url\": \"${DEFAULT_API_URL}\",
+      \"projects\": ${projects_json}
+    }"
+  profile_count=$((profile_count + 1))
 
   echo ""
-  echo "  ✓ Profile \"${profile_name}\" configured."
-  return 0
-}
-
-# ── Migration ────────────────────────────────────────────────────────────────
-
-migrate_legacy_config() {
-  if [ ! -f "$CONFIG_FILE" ]; then
-    return 1
-  fi
-
-  # Check if already multi-profile
-  if grep -q '"profiles"' "$CONFIG_FILE" 2>/dev/null; then
-    return 1
-  fi
-
-  # Check if it's a legacy single-key config
-  if ! grep -q '"api_key"' "$CONFIG_FILE" 2>/dev/null; then
-    return 1
-  fi
-
-  echo "  Found legacy single-key config."
-  read -rp "  Migrate to multi-profile format? [Y/n] " migrate
-  if [[ "$migrate" =~ ^[Nn]$ ]]; then
-    return 1
-  fi
-
-  local old_key old_url
-  old_key=$(grep -o '"api_key"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONFIG_FILE" | head -1 | sed 's/.*:.*"\(.*\)"/\1/')
-  old_url=$(grep -o '"api_url"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONFIG_FILE" | head -1 | sed 's/.*:.*"\(.*\)"/\1/')
-
-  if [ -z "$old_key" ]; then
-    echo "  ✗ Could not read existing key."
-    return 1
-  fi
-
-  read -rp "  Name for existing profile [Default]: " name
-  name="${name:-Default}"
-
-  echo ""
-  echo "  Migrating existing key to profile \"${name}\" (matches all projects)."
-
-  # Backup old config
-  cp "$CONFIG_FILE" "$CONFIG_FILE.bak"
-
-  cat > "$CONFIG_FILE" <<EOF
-{
-  "profiles": [
-    {
-      "name": "$(json_escape "$name")",
-      "api_key": "${old_key}",
-      "api_url": "${old_url:-$DEFAULT_API_URL}",
-      "projects": []
-    }
-  ]
-}
-EOF
-
-  chmod 600 "$CONFIG_FILE"
-  echo "  ✓ Migrated. Backup saved to ${CONFIG_FILE}.bak"
-  echo ""
-
+  echo "  ✓ Profile \"${profile_name}\" added."
   read -rp "  Add another profile? [y/N] " add_more
-  if [[ "$add_more" =~ ^[Yy]$ ]]; then
-    return 0  # signal caller to continue adding
+  if [[ ! "$add_more" =~ ^[Yy]$ ]]; then
+    break
   fi
-  return 2  # signal caller we're done
-}
+  echo ""
+done
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+if [ "$profile_count" -eq 0 ]; then
+  echo "  No profiles configured. Setup cancelled."
+  exit 1
+fi
 
-main() {
-  print_header
-  mkdir -p "$CONFIG_DIR"
-
-  PROFILES_TMP=$(mktemp)
-  trap 'rm -f "$PROFILES_TMP"' EXIT
-
-  # Handle existing config
-  if [ -f "$CONFIG_FILE" ]; then
-    local migrate_result=0
-    migrate_legacy_config || migrate_result=$?
-
-    if [ "$migrate_result" -eq 2 ]; then
-      # Migration done, user doesn't want more profiles
-      echo ""
-      echo "  Setup complete. Config at $CONFIG_FILE"
-      echo ""
-      return 0
-    elif [ "$migrate_result" -eq 1 ]; then
-      # Already multi-profile or user declined migration
-      if grep -q '"profiles"' "$CONFIG_FILE" 2>/dev/null; then
-        echo "  Existing multi-profile config found."
-        echo ""
-        echo "  1) Add a new profile"
-        echo "  2) Start fresh (replace all profiles)"
-        echo "  3) Cancel"
-        echo ""
-        read -rp "  Choice [1/2/3]: " choice
-        case "$choice" in
-          1)
-            # We'll append to existing profiles below
-            ;;
-          2)
-            echo "  Starting fresh..."
-            cp "$CONFIG_FILE" "$CONFIG_FILE.bak"
-            ;;
-          *)
-            echo "  Setup cancelled."
-            return 0
-            ;;
-        esac
-      fi
-    fi
-    # migrate_result 0 means migration succeeded, continue to add more profiles
-  fi
-
-  # Collect profiles
-  local profile_num=1
-  while true; do
-    if collect_profile "$profile_num"; then
-      profile_num=$((profile_num + 1))
-    else
-      echo "  Skipping profile."
-    fi
-
-    echo ""
-    read -rp "  Add another profile? [y/N] " more
-    if [[ ! "$more" =~ ^[Yy]$ ]]; then
-      break
-    fi
-  done
-
-  # Check we have at least one new profile
-  if [ ! -s "$PROFILES_TMP" ]; then
-    echo "  No profiles configured."
-    return 1
-  fi
-
-  # Build final config JSON
-  # If appending to existing config, merge profile arrays
-  local existing_profiles=""
-  if [ -f "$CONFIG_FILE" ] && grep -q '"profiles"' "$CONFIG_FILE" 2>/dev/null; then
-    # Extract existing profile objects (everything between first [ and last ])
-    existing_profiles=$(sed -n '/"profiles"/,/]/p' "$CONFIG_FILE" | grep -v '"profiles"' | grep -v '^\s*\]' | sed '/^$/d')
-  fi
-
-  # Combine profiles
-  local all_profiles=""
-  if [ -n "$existing_profiles" ]; then
-    # Ensure existing profiles end with comma
-    all_profiles="${existing_profiles}"
-    # Check if existing ends with a closing brace (need comma)
-    if echo "$all_profiles" | tail -1 | grep -q '}[[:space:]]*$'; then
-      all_profiles=$(echo "$all_profiles" | sed '$ s/}[[:space:]]*$/},/')
-    fi
-    all_profiles="${all_profiles}
-$(cat "$PROFILES_TMP")"
-  else
-    all_profiles=$(cat "$PROFILES_TMP")
-  fi
-
-  # Separate profiles with commas
-  local formatted_profiles
-  formatted_profiles=$(echo "$all_profiles" | awk '
-    /^[[:space:]]*\{/ { if (NR > 1 && !comma_added) printf ",\n"; comma_added=0 }
-    { print }
-    /^[[:space:]]*\}/ { comma_added=0 }
-  ')
-
-  cat > "$CONFIG_FILE" <<EOF
+mkdir -p "$CONFIG_DIR"
+chmod 700 "$CONFIG_DIR"
+if [ -f "$CONFIG_FILE" ]; then
+  cp "$CONFIG_FILE" "$CONFIG_FILE.bak"
+  chmod 600 "$CONFIG_FILE.bak"
+fi
+config_tmp=$(mktemp "$CONFIG_DIR/config.XXXXXX")
+trap 'rm -f "$config_tmp"' EXIT
+cat > "$config_tmp" <<EOF
 {
-  "profiles": [
-${formatted_profiles}
+  "profiles": [${PROFILES_JSON}
   ]
 }
 EOF
+chmod 600 "$config_tmp"
+mv "$config_tmp" "$CONFIG_FILE"
+trap - EXIT
 
-  chmod 600 "$CONFIG_FILE"
+echo ""
+echo "  ✓ Config written to $CONFIG_FILE (${profile_count} profile(s))"
+if [ -f "$CONFIG_FILE.bak" ]; then
+  echo "  Previous config backed up to $CONFIG_FILE.bak"
+fi
+echo "  Verifying tracker keys against ${DEFAULT_API_URL}..."
+echo ""
 
-  echo ""
-  echo "  ✓ Config written to $CONFIG_FILE"
-  echo "  Profiles: ${profile_num}"
-  echo ""
-  echo "  This config is shared by the Claude Code and Codex plugins."
-  echo "  Both tools will route heartbeats based on your project mappings."
-  echo ""
-}
+i=0
+while [ "$i" -lt "$profile_count" ]; do
+  profile_name=$(awk -v idx="$i" '/"name"/{if(n++==idx){gsub(/.*"name"[[:space:]]*:[[:space:]]*"/,""); gsub(/".*/,""); print; exit}}' "$CONFIG_FILE")
+  api_key=$(awk -v idx="$i" '/"api_key"/{if(n++==idx){gsub(/.*"api_key"[[:space:]]*:[[:space:]]*"/,""); gsub(/".*/,""); print; exit}}' "$CONFIG_FILE")
+  status=$(curl -s -o /dev/null -w "%{http_code}" \
+    --max-time 10 \
+    --proto '=https' \
+    --tlsv1.2 \
+    -X POST \
+    -H "Authorization: Bearer ${api_key}" \
+    -H "Content-Type: application/json" \
+    -d '{"heartbeats":[{"source":"codex","project_name":"setup-verify","language":"multi","file_type":"multi","branch":"unknown","editor":"Codex","timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","duration_seconds":0,"session_id":"setup-'"$$"'"}]}' \
+    "${DEFAULT_API_URL}/api/heartbeat" 2>/dev/null || echo "000")
 
-main "$@"
+  case "$status" in
+    200|201|204) echo "  ✓ ${profile_name}: key accepted" ;;
+    401) echo "  ✗ ${profile_name}: key rejected; create or reassign the seat key in QuarryFi" ;;
+    403) echo "  ✗ ${profile_name}: accepted heartbeats require active QuarryFi Core access" ;;
+    *) echo "  ⚠ ${profile_name}: verification unavailable (HTTP ${status}); the key remains saved" ;;
+  esac
+  i=$((i + 1))
+done
+
+echo ""
+echo "  Setup complete. Restart Codex, review the hook trust prompt, and start a"
+echo "  new task. Then ask: Check my QuarryFi R&D tracking status."
+echo ""

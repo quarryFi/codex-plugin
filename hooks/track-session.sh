@@ -8,6 +8,7 @@
 # - Failures are silenced so tracking never interrupts Codex
 
 set -o pipefail
+umask 077
 
 CONFIG_DIR="$HOME/.quarryfi"
 CONFIG_FILE="$CONFIG_DIR/config.json"
@@ -31,10 +32,47 @@ json_string() {
   printf '%s' "$1" | grep -o "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*:[[:space:]]*"\(.*\)"/\1/'
 }
 
-EVENT_NAME_FROM_JSON=$(json_string "$EVENT_JSON" "hook_event_name")
-EVENT_CWD_FROM_JSON=$(json_string "$EVENT_JSON" "cwd")
-EVENT_SESSION_ID_FROM_JSON=$(json_string "$EVENT_JSON" "session_id")
-EVENT_FILE_PATH_FROM_JSON=$(json_string "$EVENT_JSON" "file_path")
+parse_event_fields() {
+  if command -v node >/dev/null 2>&1; then
+    printf '%s' "$EVENT_JSON" | node -e '
+let input="";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data",(chunk)=>input+=chunk);
+process.stdin.on("end",()=>{
+  try {
+    const event=JSON.parse(input||"{}");
+    const clean=(value)=>String(value??"").replace(/[\t\r\n]/g," ");
+    process.stdout.write([
+      clean(event.hook_event_name),
+      clean(event.cwd),
+      clean(event.session_id),
+      clean(event.file_path??event.tool_input?.file_path),
+    ].join("\t"));
+  } catch {
+    process.exitCode=1;
+  }
+});'
+    return
+  fi
+
+  printf '%s\t%s\t%s\t%s' \
+    "$(json_string "$EVENT_JSON" "hook_event_name")" \
+    "$(json_string "$EVENT_JSON" "cwd")" \
+    "$(json_string "$EVENT_JSON" "session_id")" \
+    "$(json_string "$EVENT_JSON" "file_path")"
+}
+
+json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n\r\t' '   '
+}
+
+normalize_api_url() {
+  # Released plugins always send to QuarryFi. The argument remains accepted so
+  # older config files still parse, but it cannot redirect a seat credential.
+  echo "$DEFAULT_API_URL"
+}
+
+IFS=$'\t' read -r EVENT_NAME_FROM_JSON EVENT_CWD_FROM_JSON EVENT_SESSION_ID_FROM_JSON EVENT_FILE_PATH_FROM_JSON <<< "$(parse_event_fields)"
 EVENT_NAME_FROM_ENV="${CODEX_HOOK_EVENT:-${HOOK_EVENT_NAME:-}}"
 
 get_plugin_version() {
@@ -279,9 +317,13 @@ append_audit() {
   local api_url="$3"
   local http_status="$4"
 
+  local safe_profile safe_api_url safe_status
+  safe_profile=$(json_escape "$profile_name")
+  safe_api_url=$(json_escape "$api_url")
+  safe_status=$(json_escape "$http_status")
   rotate_audit_log
   printf '{"ts":"%s","profile":"%s","api_url":"%s","http_status":"%s","payload":%s}\n' \
-    "$(timestamp_utc)" "$profile_name" "$api_url" "$http_status" "$payload" >> "$AUDIT_LOG" 2>/dev/null || true
+    "$(timestamp_utc)" "$safe_profile" "$safe_api_url" "$safe_status" "$payload" >> "$AUDIT_LOG" 2>/dev/null || true
 }
 
 append_status_audit() {
@@ -289,9 +331,13 @@ append_status_audit() {
   local event_name="$2"
   local status="$3"
 
+  local safe_project safe_event safe_status
+  safe_project=$(json_escape "$project_name")
+  safe_event=$(json_escape "$event_name")
+  safe_status=$(json_escape "$status")
   rotate_audit_log
   printf '{"ts":"%s","project":"%s","event":"%s","status":"%s"}\n' \
-    "$(timestamp_utc)" "$project_name" "$event_name" "$status" >> "$AUDIT_LOG" 2>/dev/null || true
+    "$(timestamp_utc)" "$safe_project" "$safe_event" "$safe_status" >> "$AUDIT_LOG" 2>/dev/null || true
 }
 
 get_project_name() {
@@ -463,12 +509,30 @@ build_payload() {
   local repo_fingerprint="${15}"
   local activity_kind="${16}"
   local changed_file_count="${17}"
+  local safe_event safe_now safe_session_id safe_project_name safe_editor safe_branch safe_language safe_file_type
+  local safe_plugin_version safe_runtime_channel safe_install_revision safe_host_app safe_head_sha safe_repo_fingerprint safe_activity_kind
+  safe_event=$(json_escape "$event")
+  safe_now=$(json_escape "$now")
+  safe_session_id=$(json_escape "$session_id")
+  safe_project_name=$(json_escape "$project_name")
+  safe_editor=$(json_escape "$editor")
+  safe_branch=$(json_escape "$branch")
+  safe_language=$(json_escape "$language")
+  safe_file_type=$(json_escape "$file_type")
+  safe_plugin_version=$(json_escape "$plugin_version")
+  safe_runtime_channel=$(json_escape "$runtime_channel")
+  safe_install_revision=$(json_escape "$install_revision")
+  safe_host_app=$(json_escape "$host_app")
+  safe_head_sha=$(json_escape "$head_sha")
+  safe_repo_fingerprint=$(json_escape "$repo_fingerprint")
+  safe_activity_kind=$(json_escape "$activity_kind")
+
   local head_fragment="" repo_fragment=""
-  [ -n "$head_sha" ] && head_fragment=",\"head_sha\":\"${head_sha}\""
-  [ -n "$repo_fingerprint" ] && repo_fragment=",\"repo_fingerprint\":\"${repo_fingerprint}\""
+  [ -n "$safe_head_sha" ] && head_fragment=",\"head_sha\":\"${safe_head_sha}\""
+  [ -n "$safe_repo_fingerprint" ] && repo_fragment=",\"repo_fingerprint\":\"${safe_repo_fingerprint}\""
 
   cat <<EOF
-{"client":{"plugin_version":"${plugin_version}","runtime_channel":"${runtime_channel}","hook_mode":"${HOOK_MODE}","install_revision":"${install_revision}","host_app":"${host_app}"},"heartbeats":[{"source":"codex","project_name":"${project_name}","language":"${language}","file_type":"${file_type}","branch":"${branch}","editor":"${editor}","timestamp":"${now}","duration_seconds":${duration},"session_id":"${session_id}","event":"${event}"${head_fragment}${repo_fragment},"activity_kind":"${activity_kind}","changed_file_count":${changed_file_count}}]}
+{"client":{"plugin_version":"${safe_plugin_version}","runtime_channel":"${safe_runtime_channel}","hook_mode":"${HOOK_MODE}","install_revision":"${safe_install_revision}","host_app":"${safe_host_app}"},"heartbeats":[{"source":"codex","project_name":"${safe_project_name}","language":"${safe_language}","file_type":"${safe_file_type}","branch":"${safe_branch}","editor":"${safe_editor}","timestamp":"${safe_now}","duration_seconds":${duration},"session_id":"${safe_session_id}","event":"${safe_event}"${head_fragment}${repo_fragment},"activity_kind":"${safe_activity_kind}","changed_file_count":${changed_file_count}}]}
 EOF
 }
 
@@ -501,11 +565,14 @@ send_heartbeat_to_profile() {
   local project_name="$5"
   local event_name="$6"
 
+  api_url=$(normalize_api_url "$api_url")
   local http_status response_file
   response_file=$(mktemp "${TMPDIR:-/tmp}/quarryfi-heartbeat.XXXXXX" 2>/dev/null || true)
   [ -z "$response_file" ] && response_file="/dev/null"
   http_status=$(curl -s -o "$response_file" -w "%{http_code}" \
     --max-time 5 \
+    --proto '=https' \
+    --tlsv1.2 \
     -X POST \
     -H "Authorization: Bearer ${api_key}" \
     -H "Content-Type: application/json" \
@@ -560,7 +627,8 @@ dispatch_to_profiles() {
     config_content=$(cat "$CONFIG_FILE" 2>/dev/null)
     api_key=$(json_string "$config_content" "api_key")
     api_url=$(json_string "$config_content" "api_url")
-    if [ -n "$api_key" ] && [ -n "$api_url" ]; then
+    api_url="${api_url:-$DEFAULT_API_URL}"
+    if [ -n "$api_key" ]; then
       send_heartbeat_to_profile "$api_key" "$api_url" "default" "$payload" "$project_name" "$event"
     else
       append_status_audit "$project_name" "$event" "skipped:missing_credentials"

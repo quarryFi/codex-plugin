@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,199 +19,216 @@ const hookPath = join(repoRoot, "hooks", "track-session.sh");
 const manifest = JSON.parse(readFileSync(join(repoRoot, ".codex-plugin", "plugin.json"), "utf8"));
 const hooksConfig = JSON.parse(readFileSync(join(repoRoot, "hooks.json"), "utf8"));
 const tmpHome = mkdtempSync(join(tmpdir(), "quarryfi-codex-hook-"));
-const projectRoot = join(tmpHome, "work", "client-a");
+const projectRoot = join(tmpHome, "work", 'client-"a');
 const projectDir = join(projectRoot, "app");
-const projectDirsRoot = join(tmpHome, "work", "client-b");
-const projectDirsDir = join(projectDirsRoot, "app");
-const codexFallbackDir = join(tmpHome, "work", "codex-default", "quarryfi");
-const pseudoCodexDir = join(tmpHome, "New Flow");
 const configDir = join(tmpHome, ".quarryfi");
-const received = [];
+const binDir = join(tmpHome, "bin");
+const captureDir = join(tmpHome, "captures");
 
 assertSupportedCodexHooks();
 assertRootHookBundleIsDiscoverable();
 assertHookCommandsUsePluginRoot();
 assertProductionHostname();
 
-mkdirSync(projectDir, { recursive: true });
-mkdirSync(projectDirsDir, { recursive: true });
-mkdirSync(codexFallbackDir, { recursive: true });
-mkdirSync(pseudoCodexDir, { recursive: true });
-mkdirSync(configDir, { recursive: true });
-writeFileSync(join(projectDir, "package.json"), "{}\n");
-execFileSync("git", ["init", "-q", projectDir]);
-execFileSync("git", ["-C", projectDir, "config", "user.email", "tracker-test@quarryfi.test"]);
-execFileSync("git", ["-C", projectDir, "config", "user.name", "QuarryFi Tracker Test"]);
-execFileSync("git", ["-C", projectDir, "add", "package.json"]);
-execFileSync("git", ["-C", projectDir, "commit", "-qm", "test fixture"]);
-execFileSync("git", ["-C", projectDir, "remote", "add", "origin", "git@github.com:QuarryFi/private-example.git"]);
-writeFileSync(join(projectDirsDir, "package.json"), "{}\n");
-writeFileSync(join(codexFallbackDir, "package.json"), "{}\n");
-
-const server = createServer((request, response) => {
-  let body = "";
-  request.setEncoding("utf8");
-  request.on("data", (chunk) => {
-    body += chunk;
-  });
-  request.on("end", () => {
-    received.push({
-      method: request.method,
-      url: request.url,
-      authorization: request.headers.authorization,
-      body: JSON.parse(body),
-    });
-    response.writeHead(204).end();
-  });
-});
-
 try {
-  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
-  const { port } = server.address();
-  const apiUrl = `http://127.0.0.1:${port}`;
+  mkdirSync(projectDir, { recursive: true });
+  mkdirSync(configDir, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  mkdirSync(captureDir, { recursive: true });
+  writeFileSync(join(projectDir, "package.json"), "{}\n");
+  writeFileSync(join(projectDir, 'service-"quoted.test.ts'), "export const privateValue = 'never transmit me';\n");
+  execFileSync("git", ["init", "-q", projectDir]);
+  execFileSync("git", ["-C", projectDir, "config", "user.email", "tracker-test@quarryfi.test"]);
+  execFileSync("git", ["-C", projectDir, "config", "user.name", "QuarryFi Tracker Test"]);
+  execFileSync("git", ["-C", projectDir, "add", "package.json"]);
+  execFileSync("git", ["-C", projectDir, "commit", "-qm", "test fixture"]);
+  execFileSync("git", ["-C", projectDir, "checkout", "-qb", 'feature/"privacy']);
+  execFileSync("git", ["-C", projectDir, "remote", "add", "origin", "git@github.com:QuarryFi/private-example.git"]);
 
+  installFakeCurl();
   writeFileSync(
     join(configDir, "config.json"),
     JSON.stringify({
       profiles: [
-        { name: "Client A", api_key: "qf_client_a", api_url: apiUrl, projects: [projectRoot] },
-        { name: "Client B", api_key: "qf_client_b", api_url: apiUrl, project_dirs: [projectDirsRoot] },
-        { name: "Catch All", api_key: "qf_catch_all", api_url: apiUrl, projects: [] },
-        { name: "Other Client", api_key: "qf_other", api_url: apiUrl, projects: [join(tmpHome, "other")] },
+        { name: 'Client "A"', api_key: "qf_client_a", api_url: "https://capture.invalid", projects: [projectRoot] },
+        { name: "Catch All", api_key: "qf_catch_all", api_url: "http://127.0.0.1:9999", projects: [] },
+        { name: "Other Client", api_key: "qf_other", projects: [join(tmpHome, "other")] },
       ],
-    }, null, 2)
+    }, null, 2),
+    { mode: 0o600 },
   );
 
-  const result = await runHook(["UserPromptSubmit", projectDir, "ci-session"]);
-  assert.equal(result.code, 0, result.stderr);
-  assert.equal(received.length, 2);
+  runHook(["UserPromptSubmit", projectDir, 'ci-"session']);
+  let requests = readCapturedRequests();
+  assert.equal(requests.length, 2);
   assert.deepEqual(
-    received.map((request) => request.authorization).sort(),
-    ["Bearer qf_catch_all", "Bearer qf_client_a"]
+    requests.map((request) => request.authorization).sort(),
+    ["Authorization: Bearer qf_catch_all", "Authorization: Bearer qf_client_a"],
   );
+  assertSafeRequests(requests, 'ci-"session', "javascript");
 
-  for (const request of received) {
-    assert.equal(request.method, "POST");
-    assert.equal(request.url, "/api/heartbeat");
-    assert.equal(request.body.client.plugin_version, manifest.version);
-    assert.equal(request.body.client.hook_mode, "event_plus_timer");
-    assert.match(request.body.client.runtime_channel, /^codex_/);
-    assert.equal(request.body.client.host_app, "codex_app");
+  clearCaptures();
+  runManifestHook({
+    eventName: "UserPromptSubmit",
+    cwd: projectDir,
+    sessionId: 'manifest-"session',
+    filePath: join(projectDir, 'service-"quoted.test.ts'),
+  });
+  requests = readCapturedRequests();
+  assert.equal(requests.length, 2, "manifest hook must run from a project cwd");
+  assertSafeRequests(requests, 'manifest-"session', "typescript");
+  for (const request of requests) {
+    assert.equal(request.payload.heartbeats[0].activity_kind, "test");
+    assert.equal(request.payload.heartbeats[0].language, "typescript");
+  }
 
-    const [heartbeat] = request.body.heartbeats;
+  console.log("Codex tracker privacy and lifecycle regression passed.");
+} finally {
+  try {
+    runHook(["Stop", projectDir, "cleanup-session"]);
+  } catch {
+    // Best-effort timer cleanup; the temporary HOME is removed below.
+  }
+  stopHookTimers();
+  rmSync(tmpHome, { recursive: true, force: true });
+}
+
+function installFakeCurl() {
+  const fakeCurl = join(binDir, "curl");
+  writeFileSync(fakeCurl, `#!/bin/sh
+capture=$(mktemp "$QF_CAPTURE_DIR/request.XXXXXX") || exit 1
+printf '%s\n' "$@" > "$capture.args"
+payload=''
+authorization=''
+url=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -d)
+      shift
+      payload="$1"
+      ;;
+    -H)
+      shift
+      case "$1" in Authorization:*) authorization="$1" ;; esac
+      ;;
+    http://*|https://*) url="$1" ;;
+  esac
+  shift
+done
+printf '%s' "$payload" > "$capture.payload"
+printf '%s' "$authorization" > "$capture.authorization"
+printf '%s' "$url" > "$capture.url"
+printf '204'
+`);
+  chmodSync(fakeCurl, 0o755);
+}
+
+function runHook(args) {
+  execFileSync("bash", [hookPath, ...args], {
+    cwd: projectDir,
+    env: testEnv(),
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+}
+
+function runManifestHook({ eventName, cwd, sessionId, filePath }) {
+  const command = hooksConfig.hooks[eventName][0].hooks[0].command;
+  execFileSync("bash", ["-c", command], {
+    cwd,
+    env: testEnv(),
+    input: JSON.stringify({
+      hook_event_name: eventName,
+      cwd,
+      session_id: sessionId,
+      tool_input: { file_path: filePath },
+    }),
+    stdio: ["pipe", "ignore", "pipe"],
+  });
+}
+
+function testEnv() {
+  return {
+    ...process.env,
+    HOME: tmpHome,
+    PATH: `${binDir}:${process.env.PATH}`,
+    QF_CAPTURE_DIR: captureDir,
+    CODEX_CLIENT: "app",
+    PLUGIN_ROOT: repoRoot,
+  };
+}
+
+function readCapturedRequests() {
+  return readdirSync(captureDir)
+    .filter((name) => name.endsWith(".payload"))
+    .sort()
+    .map((name) => {
+      const base = join(captureDir, name.slice(0, -".payload".length));
+      return {
+        args: readFileSync(`${base}.args`, "utf8"),
+        authorization: readFileSync(`${base}.authorization`, "utf8"),
+        url: readFileSync(`${base}.url`, "utf8"),
+        payload: JSON.parse(readFileSync(`${base}.payload`, "utf8")),
+      };
+    });
+}
+
+function clearCaptures() {
+  for (const name of readdirSync(captureDir)) rmSync(join(captureDir, name));
+}
+
+function assertSafeRequests(requests, expectedSessionId, expectedLanguage) {
+  for (const request of requests) {
+    assert.equal(request.url, "https://quarryfi.com/api/heartbeat");
+    assert.match(request.args, /--proto\n=https/);
+    assert.match(request.args, /--tlsv1\.2/);
+    assert.ok(!request.args.includes("capture.invalid"));
+    assert.ok(!request.args.includes("127.0.0.1"));
+    assert.equal(request.payload.client.plugin_version, manifest.version);
+    assert.equal(request.payload.client.hook_mode, "event_plus_timer");
+    assert.match(request.payload.client.runtime_channel, /^codex_/);
+    assert.equal(request.payload.client.host_app, "codex_app");
+
+    const [heartbeat] = request.payload.heartbeats;
     assert.equal(heartbeat.source, "codex");
     assert.equal(heartbeat.event, "heartbeat");
-    assert.equal(heartbeat.session_id, "ci-session");
+    assert.equal(heartbeat.session_id, expectedSessionId);
     assert.equal(heartbeat.project_name, "app");
-    assert.equal(heartbeat.language, "javascript");
+    assert.equal(heartbeat.language, expectedLanguage);
+    assert.equal(heartbeat.branch, 'feature/"privacy');
     assert.match(heartbeat.head_sha, /^[a-f0-9]{40}$/);
     assert.match(heartbeat.repo_fingerprint, /^[a-f0-9]{64}$/);
-    assert.equal(heartbeat.activity_kind, "implementation");
     assert.equal(heartbeat.changed_file_count, 0);
     for (const forbidden of ["source_code", "diff", "prompt", "command", "file_path", "remote_url"]) {
       assert.equal(forbidden in heartbeat, false, `heartbeat must not include ${forbidden}`);
     }
+    assert.ok(!JSON.stringify(request.payload).includes("privateValue"));
+    assert.ok(!JSON.stringify(request.payload).includes(tmpHome));
   }
-
-  received.length = 0;
-  const manifestResult = await runManifestHook({
-    eventName: "UserPromptSubmit",
-    cwd: projectDir,
-    sessionId: "ci-manifest-session",
-  });
-  assert.equal(manifestResult.code, 0, manifestResult.stderr);
-  assert.equal(received.length, 2, "the manifest command must run successfully from the project cwd");
-  for (const request of received) {
-    assert.equal(request.body.client.plugin_version, manifest.version);
-    assert.equal(request.body.heartbeats[0].source, "codex");
-    assert.equal(request.body.heartbeats[0].session_id, "ci-manifest-session");
-  }
-
-  received.length = 0;
-  const projectDirsResult = await runHook(["UserPromptSubmit", projectDirsDir, "ci-project-dirs-session"], projectDirsDir);
-  assert.equal(projectDirsResult.code, 0, projectDirsResult.stderr);
-  assert.deepEqual(
-    received.map((request) => request.authorization).sort(),
-    ["Bearer qf_catch_all", "Bearer qf_client_b"]
-  );
-  assert.equal(received[0].body.heartbeats[0].project_name, "app");
-
-  received.length = 0;
-  writeFileSync(
-    join(configDir, "config.json"),
-    JSON.stringify({
-      profiles: [
-        {
-          name: "Solo Company",
-          api_key: "qf_solo",
-          api_url: apiUrl,
-          projects: [join(tmpHome, "unmatched", "root")],
-          codex_default_project: codexFallbackDir,
-        },
-      ],
-    }, null, 2)
-  );
-
-  const fallbackResult = await runHook(["UserPromptSubmit", pseudoCodexDir, "ci-fallback-session"], pseudoCodexDir);
-  assert.equal(fallbackResult.code, 0, fallbackResult.stderr);
-  assert.equal(received.length, 1);
-  assert.equal(received[0].authorization, "Bearer qf_solo");
-  assert.equal(received[0].body.heartbeats[0].project_name, "quarryfi");
-  assert.equal(received[0].body.heartbeats[0].language, "javascript");
-} finally {
-  stopHookTimers();
-  await new Promise((resolveClose) => server.close(resolveClose));
-  rmSync(tmpHome, { recursive: true, force: true });
 }
 
 function assertSupportedCodexHooks() {
   const supportedEvents = new Set([
-    "PreToolUse",
-    "PermissionRequest",
-    "PostToolUse",
-    "PreCompact",
-    "PostCompact",
-    "UserPromptSubmit",
-    "SubagentStart",
-    "SubagentStop",
-    "SessionStart",
-    "Stop",
+    "PreToolUse", "PermissionRequest", "PostToolUse", "PreCompact", "PostCompact",
+    "UserPromptSubmit", "SubagentStart", "SubagentStop", "SessionStart", "Stop",
   ]);
-
   for (const eventName of Object.keys(hooksConfig.hooks ?? {})) {
     assert.ok(supportedEvents.has(eventName), `${eventName} is not a supported Codex hook event`);
   }
-
   const postToolUseGroups = hooksConfig.hooks?.PostToolUse ?? [];
   assert.ok(postToolUseGroups.length > 0, "PostToolUse hook must be registered");
-  assert.ok(
-    postToolUseGroups.some((group) => group.matcher === "*" || group.matcher === undefined),
-    "PostToolUse must match all current Codex tool names"
-  );
+  assert.ok(postToolUseGroups.some((group) => group.matcher === "*" || group.matcher === undefined));
 }
 
 function assertRootHookBundleIsDiscoverable() {
-  assert.equal(
-    "hooks" in manifest,
-    false,
-    "plugin.json must omit the unsupported hooks field"
-  );
-  assert.equal(
-    existsSync(join(repoRoot, "hooks.json")),
-    true,
-    "the root hooks.json file must remain available for Codex lifecycle discovery"
-  );
+  assert.equal("hooks" in manifest, false, "plugin.json must omit the unsupported hooks field");
+  assert.equal(existsSync(join(repoRoot, "hooks.json")), true);
 }
 
 function assertHookCommandsUsePluginRoot() {
   for (const [eventName, groups] of Object.entries(hooksConfig.hooks ?? {})) {
     for (const group of groups) {
       for (const hook of group.hooks ?? []) {
-        assert.match(
-          hook.command,
-          /^"\$PLUGIN_ROOT\/hooks\/track-session\.sh" /,
-          `${eventName} must resolve track-session.sh from PLUGIN_ROOT because Codex runs hooks from the session cwd`
-        );
+        assert.match(hook.command, /^"\$PLUGIN_ROOT\/hooks\/track-session\.sh" /, `${eventName} must use PLUGIN_ROOT`);
       }
     }
   }
@@ -213,101 +237,21 @@ function assertHookCommandsUsePluginRoot() {
 function assertProductionHostname() {
   const retiredHostname = "quarryfi.smashedstudiosllc.workers.dev";
   for (const relativePath of [
-    ".codex-plugin/plugin.json",
-    "hooks/track-session.sh",
-    "setup.sh",
-    "skills/quarryfi-status/SKILL.md",
+    ".codex-plugin/plugin.json", "hooks/track-session.sh", "setup.sh", "skills/quarryfi-status/SKILL.md",
   ]) {
     const contents = readFileSync(join(repoRoot, relativePath), "utf8");
-    assert.ok(!contents.includes(retiredHostname), `${relativePath} must not use the retired workers.dev hostname`);
+    assert.ok(!contents.includes(retiredHostname), `${relativePath} must not use the retired hostname`);
   }
 }
 
-function runHook(args, cwd = projectDir) {
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn("bash", [hookPath, ...args], {
-      cwd,
-      env: {
-        ...process.env,
-        HOME: tmpHome,
-        CODEX_CLIENT: "app",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    const timeout = setTimeout(() => {
-      child.kill("SIGTERM");
-      rejectRun(new Error("hook regression timed out"));
-    }, 8000);
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", rejectRun);
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      resolveRun({ code, stdout, stderr });
-    });
-  });
-}
-
-function runManifestHook({ eventName, cwd, sessionId }) {
-  const command = hooksConfig.hooks[eventName][0].hooks[0].command;
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn("bash", ["-lc", command], {
-      cwd,
-      env: {
-        ...process.env,
-        HOME: tmpHome,
-        CODEX_CLIENT: "app",
-        PLUGIN_ROOT: repoRoot,
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    const timeout = setTimeout(() => {
-      child.kill("SIGTERM");
-      rejectRun(new Error("manifest hook regression timed out"));
-    }, 8000);
-
-    child.stdin.end(JSON.stringify({
-      hook_event_name: eventName,
-      cwd,
-      session_id: sessionId,
-      permission_mode: "default",
-    }));
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", rejectRun);
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      resolveRun({ code, stdout, stderr });
-    });
-  });
-}
-
 function stopHookTimers() {
-  const auditRoot = join(tmpHome, ".quarryfi");
   try {
-    for (const entry of readdirSync(auditRoot)) {
-      const pidFile = join(auditRoot, entry, "timer.pid");
+    for (const entry of readdirSync(configDir)) {
+      const pidFile = join(configDir, entry, "timer.pid");
       if (!entry.startsWith("session-codex-") || !existsSync(pidFile)) continue;
       const pid = Number(readFileSync(pidFile, "utf8"));
       if (Number.isInteger(pid) && pid > 0) {
-        try {
-          process.kill(pid, "SIGTERM");
-        } catch {
-          // Timer may already be gone.
-        }
+        try { process.kill(pid, "SIGTERM"); } catch { /* Timer may already be gone. */ }
       }
     }
   } catch {

@@ -1,6 +1,8 @@
 # QuarryFi Codex Plugin
 
-R&D time tracking for [OpenAI Codex](https://openai.com/codex). Automatically tracks coding sessions in Codex CLI and Codex App, sending metadata-only heartbeats to your QuarryFi account for tax credit documentation.
+Privacy-minimized activity tracking for [OpenAI Codex](https://openai.com/codex). The plugin records active Codex session time and project-level metadata in QuarryFi so businesses can review potential R&D activity alongside GitHub and compensation evidence.
+
+Tracker records are supporting evidence. They do not determine tax-credit eligibility, calculate a claim by themselves, or replace advice from a qualified tax professional.
 
 Supports **multiple company profiles** with project-to-key routing — freelancers and consultants can track R&D time for different clients from a single config file.
 
@@ -128,7 +130,7 @@ bash -n hooks/track-session.sh
 node tests/hook-regression.mjs
 ```
 
-The regression test uses a temporary `~/.quarryfi/config.json` and a local mock heartbeat server. It verifies that Codex hook events send source `"codex"` payloads to all matching profiles with plugin version, runtime channel, hook mode, and install revision diagnostics. GitHub Actions runs the same check on pushes and pull requests.
+The regression test uses a temporary `~/.quarryfi/config.json` and a fake `curl` executable, so no network request is made. It verifies that Codex hook events send source `"codex"` payloads to matching profiles with plugin version, runtime channel, hook mode, and install revision diagnostics. GitHub Actions runs the same check on pushes and pull requests.
 
 ## Configuration
 
@@ -137,10 +139,11 @@ This plugin shares `~/.quarryfi/config.json` with the Claude Code plugin. If you
 ### Quick Setup
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/quarryFi/codex-plugin/main/setup.sh | bash
+cd ~/plugins/quarryfi-time-tracker
+bash setup.sh
 ```
 
-The setup wizard walks you through creating profiles interactively. You'll need a seat-assigned API key from **Tracking integrations and API keys** on your [QuarryFi Workspace dashboard](https://quarryfi.com/dashboard/team#tracking-plugins).
+The setup wizard hides key input and writes an owner-only local config. You'll need a seat-assigned API key from **Tracking integrations and API keys** on your [QuarryFi Workspace dashboard](https://quarryfi.com/dashboard/team#tracking-plugins). Run setup in a regular terminal; do not paste the key into a Codex conversation.
 
 Tracker keys and accepted heartbeats require an active QuarryFi Core subscription. You can create and explore a Free account before upgrading, but Free accounts cannot generate new tracker keys.
 
@@ -166,7 +169,7 @@ Tracker keys and accepted heartbeats require an active QuarryFi Core subscriptio
 }
 ```
 
-Each profile maps an API key to specific project directories. When a hook fires, the script matches the current working directory against profiles and sends heartbeats to all matching endpoints.
+Each profile maps an API key to specific project directories. When a hook fires, the script matches the current working directory against profiles and sends heartbeats for all matching profiles to `https://quarryfi.com`.
 
 The plugin accepts both `"projects"` and `"project_dirs"` arrays so it can share configuration with the Claude Code tracker. For Codex Desktop sessions that report a display-name workspace instead of a real project path, set `"codex_default_project"` on a single-company profile. The hook will use that path for project metadata and routing when the reported Codex cwd does not match any configured project.
 
@@ -218,7 +221,7 @@ The old single-key format is still supported:
 }
 ```
 
-When detected, it's treated as one profile that matches all projects. Running `setup.sh` will offer to migrate it to the multi-profile format.
+When detected, it is treated as one profile that matches all projects. Released builds ignore legacy custom `api_url` values and always use `https://quarryfi.com`, preventing a modified config from redirecting a seat key. Running `setup.sh` can replace the legacy config with the current multi-profile format after explicit confirmation.
 
 ## What It Tracks
 
@@ -242,11 +245,18 @@ Every heartbeat is appended to `~/.quarryfi/audit.log` as one JSON line per even
 - Fire-and-forget — audit logging never blocks or errors the hook
 - Useful for debugging and verifying heartbeats are being sent
 
+### Local retention and removal
+
+- The audit log is capped at 1MB and rotates older entries automatically.
+- Per-project session markers are removed when a tracked session ends; stale update-notice markers are removed after 30 days.
+- Profile configuration and tracker keys remain on the device until the user replaces or deletes `~/.quarryfi/config.json`.
+- To remove all local QuarryFi tracker state after uninstalling the plugin, delete `~/.quarryfi/`. This removes the saved keys, audit log, and session markers from that device; account-side deletion remains available through QuarryFi support and the product's privacy process.
+
 ### Privacy
 
 - Only project-level metadata is sent (project name, branch, duration, Git HEAD, hashed repository identity, changed-file count, and coarse activity category) plus minimal runtime diagnostics (plugin version, runtime channel, hook mode, install revision)
 - Source code, diffs, prompts, commands, command output, raw repository URLs, filenames, local paths, and AI responses are never transmitted
-- Data goes only to the API URL configured in each profile
+- Network requests go only to `https://quarryfi.com`; legacy custom endpoint values are ignored
 - All tracking runs silently — errors never interrupt your workflow
 - The local audit log stays on your machine and is never transmitted
 
@@ -276,7 +286,7 @@ Check your tracking status from within Codex:
 
 Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, the local installed plugin version, and whether any hook fired in the current session.
 
-If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.3` or newer.
+If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.4` or newer.
 
 ### quarryfi-update
 

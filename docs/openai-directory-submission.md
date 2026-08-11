@@ -17,8 +17,8 @@ Official requirements: <https://developers.openai.com/plugins/deploy/submission>
 
 - **Plugin name:** QuarryFi R&D Tracker
 - **Category:** Productivity
-- **Short description:** Track metadata-only Codex development sessions as R&D support records in QuarryFi.
-- **Long description:** QuarryFi records active Codex session time and privacy-minimized project metadata so businesses can review potential R&D activity alongside GitHub and compensation records. The tracker sends timestamps, duration, project name, branch, language, Git commit SHA, a one-way repository fingerprint, changed-file count, coarse activity category, and runtime diagnostics. It does not send source code, diffs, prompts, commands, command output, file contents, filenames, local paths, or raw repository URLs. An active QuarryFi Core account and seat-assigned tracker key are required.
+- **Short description:** Track privacy-minimized Codex activity in QuarryFi.
+- **Long description:** QuarryFi records active Codex session time and privacy-minimized project metadata so businesses can review potential R&D activity alongside GitHub and compensation records. The tracker sends timestamps, duration, project name, branch, language, Git commit SHA, a one-way repository fingerprint, changed-file count, coarse activity category, and runtime diagnostics. It does not send source code, diffs, prompts, commands, command output, file contents, filenames, local paths, or raw repository URLs. It does not determine tax-credit eligibility and is not tax advice. An active QuarryFi Core account and seat-assigned tracker key are required.
 - **Website:** <https://quarryfi.com/integrations>
 - **Support:** <https://quarryfi.com/support>
 - **Privacy:** <https://quarryfi.com/privacy>
@@ -38,7 +38,7 @@ Official requirements: <https://developers.openai.com/plugins/deploy/submission>
 2. **Unconfigured install:** With no QuarryFi config, ask for tracking status. Expect a clear setup path linking to the Workspace dashboard and no network request with invented credentials.
 3. **Multiple companies:** Configure two profiles with different project roots. Ask for status from each root. Expect only the matching company profile to be selected and no cross-company credential disclosure.
 4. **Safe update:** From a clean GitHub source clone, ask to update the plugin. Expect the update skill to fetch and fast-forward the source clone, avoid the Codex runtime cache, and tell the reviewer to restart Codex and review changed hooks.
-5. **Heartbeat privacy:** Run `node tests/hook-regression.mjs`. Expect the mock server to receive Codex heartbeat metadata and runtime diagnostics without source code, prompts, commands, filenames, local paths, diffs, or raw repository URLs.
+5. **Heartbeat privacy:** Run `node tests/hook-regression.mjs`. Expect the fake transport to capture Codex heartbeat metadata and runtime diagnostics without making a network request or including source code, prompts, commands, filenames, local paths, diffs, or raw repository URLs.
 
 ## Negative review cases
 
@@ -55,7 +55,7 @@ Official requirements: <https://developers.openai.com/plugins/deploy/submission>
 
 ## Release notes
 
-Initial public submission of the QuarryFi Codex tracker. The plugin provides metadata-only R&D session tracking, local status diagnostics, safe source-clone updates, multi-company project routing, bounded local audit logs, and explicit privacy protections. It requires an active QuarryFi Core account and a seat-assigned tracker key.
+Initial public submission of the QuarryFi Codex tracker. The plugin provides privacy-minimized R&D evidence tracking, local status diagnostics, safe source-clone updates, multi-company project routing, bounded local audit logs, a production-only network boundary, and explicit privacy protections. It requires an active QuarryFi Core account and a seat-assigned tracker key and does not determine tax-credit eligibility.
 
 ## Final checks
 

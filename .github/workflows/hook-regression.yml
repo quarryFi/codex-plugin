@@ -19,7 +19,10 @@ jobs:
           node-version: "22"
 
       - name: Shell syntax check
-        run: bash -n hooks/track-session.sh
+        run: bash -n hooks/track-session.sh setup.sh
 
       - name: Run Codex hook regression
         run: node tests/hook-regression.mjs
+
+      - name: Check submission readiness
+        run: node tests/submission-readiness.mjs

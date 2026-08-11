@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-quarryFi time tracking plugin for OpenAI Codex (CLI and App). Sends heartbeats to the quarryFi API for R&D tax credit documentation. Shares `~/.quarryfi/config.json` with the Claude Code plugin and VS Code extension.
+QuarryFi privacy-minimized activity tracker for OpenAI Codex (CLI and App). Sends project-level heartbeats to QuarryFi for R&D evidence review. Tracker data does not determine tax-credit eligibility and is not tax advice. The plugin shares `~/.quarryfi/config.json` with the Claude Code plugin and VS Code extension.
 
 ## Architecture
 
@@ -63,6 +63,8 @@ Session files live under `~/.quarryfi/session-codex-{hash}` where hash is derive
 ### Config format is shared
 
 `~/.quarryfi/config.json` is identical across the Codex plugin, Claude Code plugin, and VS Code extension. Any config format changes must be coordinated across all three repos.
+
+Released builds always send to `https://quarryfi.com`. Keep accepting legacy `api_url` fields for shared-config compatibility, but never use them to choose a network destination. This default-deny boundary prevents a modified config from redirecting a seat credential.
 
 ### Plugin folder name must match manifest name
 

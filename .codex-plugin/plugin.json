@@ -1,20 +1,20 @@
 {
   "name": "quarryfi-time-tracker",
-  "version": "0.4.3",
-  "description": "QuarryFi R&D time tracking for OpenAI Codex — multi-company profiles with project routing and audit logging",
+  "version": "0.4.4",
+  "description": "Create privacy-minimized Codex activity records in QuarryFi for R&D evidence review",
   "author": {
     "name": "Smashed Studios LLC",
     "url": "https://quarryfi.com"
   },
-  "homepage": "https://github.com/quarryFi/codex-plugin",
+  "homepage": "https://quarryfi.com/integrations",
   "repository": "https://github.com/quarryFi/codex-plugin",
   "license": "MIT",
   "keywords": ["time-tracking", "r&d", "tax-credits", "quarryfi"],
   "skills": "./skills/",
   "interface": {
     "displayName": "QuarryFi Time Tracker",
-    "shortDescription": "Track R&D time in Codex for tax credit documentation",
-    "longDescription": "Automatically tracks coding sessions in Codex CLI and Codex App. Supports multiple company profiles with project-to-key routing — freelancers can track R&D time for different clients from a single config. Includes local audit logging. Uses the same ~/.quarryfi/config.json as the Claude Code plugin.",
+    "shortDescription": "Track privacy-minimized Codex activity in QuarryFi",
+    "longDescription": "Records active Codex session time and privacy-minimized project metadata in QuarryFi so businesses can review potential R&D activity alongside other evidence. Supports multiple company profiles, project-to-key routing, and bounded local audit logging. It does not determine tax-credit eligibility and is not tax advice.",
     "developerName": "Smashed Studios LLC",
     "category": "Productivity",
     "capabilities": ["time-tracking", "session-monitoring", "multi-company", "audit-logging"],
