@@ -8,29 +8,26 @@ Supports **multiple company profiles** with project-to-key routing — freelance
 
 ## Install
 
-### Current public install: Personal Plugins
+### Public install: OpenAI Plugins Directory
 
-QuarryFi is preparing a submission to OpenAI's universal Plugins Directory. Until OpenAI approves and publishes it there, install the tracker from this GitHub repository through Codex's **Personal Plugins** marketplace.
+QuarryFi is published in the universal Plugins Directory shared by ChatGPT and Codex.
 
-1. Complete the [Home-Local Setup](#home-local-setup-codex-app--codex-cli) below so Codex can discover the GitHub-backed plugin.
-2. In the Codex App, open the **Plugins Directory**. In Codex CLI, run `/plugins`.
-3. Select **Personal Plugins**, open **QuarryFi Time Tracker**, and install it.
-4. Start a new Codex task or CLI session so the installed version is loaded.
-5. Review and trust the four QuarryFi lifecycle hooks when prompted. In Codex CLI, use `/hooks` if that command is available and the trust prompt was dismissed.
-6. Configure a seat-assigned key using [Quick Setup](#quick-setup).
-7. Ask Codex to "Check my QuarryFi R&D tracking status" and confirm Codex reports `receiving`.
+1. In the Codex App, open the **Plugins Directory**. In Codex CLI, run `/plugins`.
+2. Search for **QuarryFi R&D Tracker**, open it, and select the plus button to install it.
+3. Start a new Codex task or CLI session so the installed version is loaded.
+4. Review and trust the four QuarryFi lifecycle hooks when prompted. In Codex CLI, use `/hooks` if the prompt was dismissed.
+5. Configure a seat-assigned key using [Quick Setup](#quick-setup).
+6. Ask Codex to "Check my QuarryFi R&D tracking status" and confirm Codex reports `receiving`.
 
 You can enable/disable the plugin at any time from the plugin directory. Codex stores your preference in `~/.codex/config.toml`.
-Installing from Personal Plugins does not make the local Git clone auto-update. Update that source clone when QuarryFi releases a new version.
-After a local update, fully restart Codex and start a new session so the fresh hook code and skills actually load.
 
-### After official directory approval
+### GitHub development install: Personal Plugins
 
-Once OpenAI approves the public listing, users will be able to find QuarryFi in the universal Plugins Directory, install it with the plus button, and start a new task. The GitHub Personal Plugins route remains the supported installation path until that approval is visible in the directory.
+Use the GitHub-backed Personal Plugins route only for plugin development, release QA, or testing a version that has not reached the public directory. Do not enable the public and personal copies at the same time because matching hooks from both sources can run concurrently.
 
 ---
 
-### Home-Local Setup (Codex App / Codex CLI)
+### Home-Local Development Setup (Codex App / Codex CLI)
 
 The plugin folder name must match the `"name"` in `.codex-plugin/plugin.json`, which is `quarryfi-time-tracker`.
 
@@ -119,7 +116,7 @@ git clone https://github.com/quarryFi/codex-plugin.git plugins/quarryfi-time-tra
 After installing, confirm two things:
 
 - Manifest exists at `<plugin-folder>/.codex-plugin/plugin.json`
-- Root `hooks.json` exists so Codex can discover lifecycle tracking without an unsupported manifest field
+- Default `hooks/hooks.json` exists so current Codex hosts discover lifecycle tracking without an extra manifest field
 - A marketplace file includes an entry pointing to the plugin folder
 
 For development or QA of the hook itself, run the local regression check:
@@ -262,7 +259,7 @@ Every heartbeat is appended to `~/.quarryfi/audit.log` as one JSON line per even
 
 ## How It Works
 
-The plugin hooks into Codex lifecycle events and keeps a 60-second timer alive while the session is active:
+The plugin hooks into Codex lifecycle events and keeps a 60-second timer alive while the session is active. The timer expires after five minutes without a real Codex lifecycle event, which bounds abandoned-session traffic if Codex exits without delivering `Stop`. Timer ownership includes the installed hook revision, so a newly loaded release supersedes a legacy timer instead of allowing both to run.
 
 | Event | Action |
 |-------|--------|
@@ -270,7 +267,7 @@ The plugin hooks into Codex lifecycle events and keeps a 60-second timer alive w
 | `PostToolUse` / `UserPromptSubmit` | Flushes recent activity without double-counting |
 | `Stop` | Sends the final heartbeat and clears timer state |
 
-Heartbeats are sent to `POST /api/heartbeat` with source `"codex"`. Multiple profiles are dispatched concurrently. The foreground hook waits only for the network sends it started, while the 60-second timer continues separately in the background; this keeps hooks from hanging and being killed before QuarryFi receives the heartbeat.
+Heartbeats are sent to `POST /api/heartbeat` with source `"codex"`. Multiple profiles are dispatched concurrently. The foreground hook waits only for the network sends it started, while the bounded 60-second timer continues separately in the background; this keeps hooks from hanging without allowing an orphaned timer to run indefinitely.
 
 For stronger evidence reconciliation, each heartbeat can include the current Git commit SHA, a one-way hash of the GitHub `owner/repository` name, a changed-file count, and a coarse activity category. The plugin does not send source code, diffs, prompts, commands, command output, raw repository URLs, filenames, or local paths.
 
@@ -286,7 +283,7 @@ Check your tracking status from within Codex:
 
 Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, the local installed plugin version, and whether any hook fired in the current session.
 
-If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.4` or newer.
+If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.6` or newer.
 
 ### quarryfi-update
 
@@ -296,7 +293,7 @@ Update the plugin to the latest version without leaving Codex:
 
 Pulls the latest changes from GitHub into the local plugin folder Codex is using, shows what changed, and reminds you to restart the Codex App. No need to open a terminal, but the restart still matters because personal plugins do not hot-reload mid-session.
 
-## Updating
+## Updating a GitHub development install
 
 Local Git-backed Personal Plugins do not pull new releases in the background. To update:
 

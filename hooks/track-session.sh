@@ -17,6 +17,7 @@ AUDIT_MAX_BYTES=1048576
 DEFAULT_API_URL="https://quarryfi.com"
 HEARTBEAT_INTERVAL_SECONDS=60
 MIN_TICK_DURATION_SECONDS=45
+MAX_IDLE_SECONDS=300
 
 CLI_EVENT="${1:-}"
 CLI_CWD="${2:-}"
@@ -85,6 +86,8 @@ get_plugin_version() {
 
 get_runtime_channel() {
   case "$PLUGIN_ROOT" in
+    *"/.codex/plugins/cache/openai-curated-remote/"*) echo "codex_public_directory_cache" ;;
+    *"/.codex/plugins/cache/openai-curated/"*) echo "codex_public_directory_cache" ;;
     *"/.codex/plugins/cache/personal-plugins/"*) echo "codex_personal_cache" ;;
     *"/plugins/quarryfi-time-tracker"*) echo "codex_local_clone" ;;
     *) echo "codex_plugin_custom" ;;
@@ -286,10 +289,30 @@ record_last_sent() {
   printf '%s' "$now_ts" > "$(session_file "$cwd" "last_sent")" 2>/dev/null || true
 }
 
+record_last_activity() {
+  local cwd="$1"
+  local now_ts="$2"
+  printf '%s' "$now_ts" > "$(session_file "$cwd" "last_activity")" 2>/dev/null || true
+}
+
+activity_is_fresh() {
+  local cwd="$1"
+  local now_ts="$2"
+  local activity_file last_activity age
+  activity_file=$(session_file "$cwd" "last_activity")
+  [ -f "$activity_file" ] || return 1
+  last_activity=$(cat "$activity_file" 2>/dev/null)
+  [ -n "$last_activity" ] || return 1
+  age=$(( now_ts - last_activity ))
+  [ "$age" -lt 0 ] 2>/dev/null && return 0
+  [ "$age" -le "$MAX_IDLE_SECONDS" ] 2>/dev/null
+}
+
 cleanup_session_state() {
   local cwd="$1"
   rm -f \
     "$(session_file "$cwd" "last_sent")" \
+    "$(session_file "$cwd" "last_activity")" \
     "$(session_file "$cwd" "session_id")" \
     "$(session_file "$cwd" "cwd")" \
     "$(session_file "$cwd" "timer.pid")" 2>/dev/null || true
@@ -725,34 +748,50 @@ NODE
 
 timer_is_running() {
   local cwd="$1"
-  local pid_file timer_pid
+  local pid_file timer_state timer_pid timer_revision current_revision
   pid_file=$(session_file "$cwd" "timer.pid")
   [ -f "$pid_file" ] || return 1
-  timer_pid=$(cat "$pid_file" 2>/dev/null)
+  timer_state=$(cat "$pid_file" 2>/dev/null)
+  case "$timer_state" in
+    *"|"*) ;;
+    *)
+      rm -f "$pid_file" 2>/dev/null || true
+      return 1
+      ;;
+  esac
+  timer_pid=${timer_state%%|*}
+  timer_revision=${timer_state#*|}
   [ -n "$timer_pid" ] || return 1
+  current_revision=$(get_install_revision)
+  if [ -z "$timer_revision" ] || [ "$timer_revision" != "$current_revision" ]; then
+    rm -f "$pid_file" 2>/dev/null || true
+    return 1
+  fi
   kill -0 "$timer_pid" 2>/dev/null
 }
 
 start_timer_loop() {
   local cwd="$1"
   local session_id="$2"
-  local pid_file
+  local pid_file install_revision
   pid_file=$(session_file "$cwd" "timer.pid")
 
   if timer_is_running "$cwd"; then
     return
   fi
 
+  install_revision=$(get_install_revision)
   nohup "$0" "__timer_loop" "$cwd" "$session_id" >/dev/null 2>&1 &
-  printf '%s' "$!" > "$pid_file" 2>/dev/null || true
+  printf '%s|%s' "$!" "$install_revision" > "$pid_file" 2>/dev/null || true
 }
 
 stop_timer_loop() {
   local cwd="$1"
-  local pid_file timer_pid
+  local pid_file timer_state timer_pid
   pid_file=$(session_file "$cwd" "timer.pid")
   if [ -f "$pid_file" ]; then
-    timer_pid=$(cat "$pid_file" 2>/dev/null)
+    timer_state=$(cat "$pid_file" 2>/dev/null)
+    timer_pid=${timer_state%%|*}
     if [ -n "$timer_pid" ]; then
       kill "$timer_pid" 2>/dev/null || true
     fi
@@ -760,25 +799,55 @@ stop_timer_loop() {
   fi
 }
 
+cleanup_timer_pid() {
+  local cwd="$1"
+  local pid_file timer_identity
+  pid_file=$(session_file "$cwd" "timer.pid")
+  timer_identity="$$|$(get_install_revision)"
+  if [ "$(cat "$pid_file" 2>/dev/null)" = "$timer_identity" ]; then
+    rm -f "$pid_file" 2>/dev/null || true
+  fi
+}
+
 run_timer_loop() {
   local cwd="$1"
   local session_id="$2"
-  local pid_file
+  local pid_file timer_identity
   pid_file=$(session_file "$cwd" "timer.pid")
-  printf '%s' "$$" > "$pid_file" 2>/dev/null || true
+  timer_identity="$$|$(get_install_revision)"
+  printf '%s' "$timer_identity" > "$pid_file" 2>/dev/null || true
+  trap 'cleanup_timer_pid "$cwd"' EXIT
+  trap 'cleanup_timer_pid "$cwd"; exit 0' HUP INT TERM
 
   while true; do
-    sleep "$HEARTBEAT_INTERVAL_SECONDS" || exit 0
-
     if [ ! -f "$(session_file "$cwd" "session_id")" ]; then
       exit 0
     fi
-    if [ "$(cat "$pid_file" 2>/dev/null)" != "$$" ]; then
+    if [ "$(cat "$pid_file" 2>/dev/null)" != "$timer_identity" ]; then
       exit 0
     fi
 
     local now_ts duration_seconds
     now_ts=$(epoch_now)
+    if ! activity_is_fresh "$cwd" "$now_ts"; then
+      append_status_audit "$(basename "$cwd")" "heartbeat" "timer_expired:idle"
+      exit 0
+    fi
+
+    sleep "$HEARTBEAT_INTERVAL_SECONDS" || exit 0
+
+    if [ ! -f "$(session_file "$cwd" "session_id")" ]; then
+      exit 0
+    fi
+    if [ "$(cat "$pid_file" 2>/dev/null)" != "$timer_identity" ]; then
+      exit 0
+    fi
+
+    now_ts=$(epoch_now)
+    if ! activity_is_fresh "$cwd" "$now_ts"; then
+      append_status_audit "$(basename "$cwd")" "heartbeat" "timer_expired:idle"
+      exit 0
+    fi
     duration_seconds=$(duration_since_last_sent "$cwd" "$now_ts")
     if [ "$duration_seconds" -lt "$MIN_TICK_DURATION_SECONDS" ] 2>/dev/null; then
       continue
@@ -813,6 +882,7 @@ main() {
   fi
 
   now_ts=$(epoch_now)
+  record_last_activity "$cwd" "$now_ts"
   if [ "$raw_event" = "SessionStart" ]; then
     dispatch_to_profiles "$cwd" "$session_id" "session_start" 0
     record_last_sent "$cwd" "$now_ts"

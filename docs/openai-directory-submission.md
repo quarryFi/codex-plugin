@@ -53,9 +53,9 @@ Official requirements: <https://developers.openai.com/plugins/deploy/submission>
 - The reviewer credential must work without MFA, email confirmation, SMS confirmation, or private-network access.
 - Revoke the credential after review or rotate it before resubmission.
 
-## Release notes
+## v0.4.6 release notes
 
-Initial public submission of the QuarryFi Codex tracker. The plugin provides privacy-minimized R&D evidence tracking, local status diagnostics, safe source-clone updates, multi-company project routing, bounded local audit logs, a production-only network boundary, and explicit privacy protections. It requires an active QuarryFi Core account and a seat-assigned tracker key and does not determine tax-credit eligibility.
+Patch release for public lifecycle tracking. v0.4.6 packages the lifecycle definition at Codex's default `hooks/hooks.json` discovery path, identifies public-directory runtime telemetry, and expires background timers after five minutes without a real Codex lifecycle event so abandoned sessions cannot send indefinitely. It also adds regressions for hook discovery and timer cleanup and refreshes installation documentation for the published universal directory listing. The privacy boundary, production-only network destination, seat-scoped authentication, and tax eligibility disclaimers are unchanged.
 
 ## Final checks
 

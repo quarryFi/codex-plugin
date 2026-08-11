@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -17,7 +18,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const hookPath = join(repoRoot, "hooks", "track-session.sh");
 const manifest = JSON.parse(readFileSync(join(repoRoot, ".codex-plugin", "plugin.json"), "utf8"));
-const hooksConfig = JSON.parse(readFileSync(join(repoRoot, "hooks.json"), "utf8"));
+const hooksConfig = JSON.parse(readFileSync(join(repoRoot, "hooks", "hooks.json"), "utf8"));
 const tmpHome = mkdtempSync(join(tmpdir(), "quarryfi-codex-hook-"));
 const projectRoot = join(tmpHome, "work", 'client-"a');
 const projectDir = join(projectRoot, "app");
@@ -29,6 +30,7 @@ assertSupportedCodexHooks();
 assertRootHookBundleIsDiscoverable();
 assertHookCommandsUsePluginRoot();
 assertProductionHostname();
+assertPublicRuntimeDetection();
 
 try {
   mkdirSync(projectDir, { recursive: true });
@@ -59,6 +61,7 @@ try {
   );
 
   runHook(["UserPromptSubmit", projectDir, 'ci-"session']);
+  assertTimerIdentityVersioned();
   let requests = readCapturedRequests();
   assert.equal(requests.length, 2);
   assert.deepEqual(
@@ -81,6 +84,8 @@ try {
     assert.equal(request.payload.heartbeats[0].activity_kind, "test");
     assert.equal(request.payload.heartbeats[0].language, "typescript");
   }
+
+  assertIdleTimerExpires();
 
   console.log("Codex tracker privacy and lifecycle regression passed.");
 } finally {
@@ -220,8 +225,15 @@ function assertSupportedCodexHooks() {
 }
 
 function assertRootHookBundleIsDiscoverable() {
-  assert.equal("hooks" in manifest, false, "plugin.json must omit the unsupported hooks field");
-  assert.equal(existsSync(join(repoRoot, "hooks.json")), true);
+  assert.equal("hooks" in manifest, false, "plugin.json must stay inside the accepted ingestion schema");
+  assert.equal(existsSync(join(repoRoot, "hooks", "hooks.json")), true, "default hook bundle must exist");
+  assert.equal(existsSync(join(repoRoot, "hooks.json")), false, "legacy root hook bundle must not be duplicated");
+}
+
+function assertPublicRuntimeDetection() {
+  const hook = readFileSync(hookPath, "utf8");
+  assert.match(hook, /openai-curated-remote/);
+  assert.match(hook, /codex_public_directory_cache/);
 }
 
 function assertHookCommandsUsePluginRoot() {
@@ -244,12 +256,37 @@ function assertProductionHostname() {
   }
 }
 
+function assertIdleTimerExpires() {
+  const hash = createHash("sha256").update(projectDir).digest("hex").slice(0, 12);
+  const stateDir = join(configDir, `session-codex-${hash}`);
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, "session_id"), "idle-session");
+  writeFileSync(join(stateDir, "last_activity"), "0");
+
+  execFileSync("bash", [hookPath, "__timer_loop", projectDir, "idle-session"], {
+    cwd: projectDir,
+    env: testEnv(),
+    stdio: ["ignore", "ignore", "pipe"],
+    timeout: 2_000,
+  });
+
+  assert.equal(existsSync(join(stateDir, "timer.pid")), false, "idle timer must remove its PID file");
+  const audit = readFileSync(join(configDir, "audit.log"), "utf8");
+  assert.match(audit, /timer_expired:idle/);
+}
+
+function assertTimerIdentityVersioned() {
+  const hash = createHash("sha256").update(projectDir).digest("hex").slice(0, 12);
+  const pidFile = join(configDir, `session-codex-${hash}`, "timer.pid");
+  assert.match(readFileSync(pidFile, "utf8"), /^\d+\|[a-f0-9]{12}$/);
+}
+
 function stopHookTimers() {
   try {
     for (const entry of readdirSync(configDir)) {
       const pidFile = join(configDir, entry, "timer.pid");
       if (!entry.startsWith("session-codex-") || !existsSync(pidFile)) continue;
-      const pid = Number(readFileSync(pidFile, "utf8"));
+      const pid = Number.parseInt(readFileSync(pidFile, "utf8").split("|", 1)[0], 10);
       if (Number.isInteger(pid) && pid > 0) {
         try { process.kill(pid, "SIGTERM"); } catch { /* Timer may already be gone. */ }
       }

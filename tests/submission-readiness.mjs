@@ -13,7 +13,10 @@ const statusSkill = read("skills/quarryfi-status/SKILL.md");
 const submission = read("docs/openai-directory-submission.md");
 
 assert.equal(manifest.name, "quarryfi-time-tracker");
-assert.equal(manifest.version, "0.4.5");
+assert.equal(manifest.version, "0.4.6");
+assert.equal("hooks" in manifest, false);
+assert.equal(existsSync(join(root, "hooks", "hooks.json")), true, "default hook bundle must exist");
+assert.equal(existsSync(join(root, "hooks.json")), false, "legacy root hook bundle must not be duplicated");
 assert.equal(manifest.license, "MIT");
 assert.match(manifest.interface.longDescription, /does not determine tax-credit eligibility/i);
 assert.equal(manifest.interface.composerIcon, "./assets/quarryfi-mark.png");
