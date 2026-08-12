@@ -57,6 +57,10 @@ Official requirements: <https://developers.openai.com/plugins/deploy/submission>
 
 Patch release for public lifecycle tracking. v0.4.6 packages the lifecycle definition at Codex's default `hooks/hooks.json` discovery path, identifies public-directory runtime telemetry, and expires background timers after five minutes without a real Codex lifecycle event so abandoned sessions cannot send indefinitely. It also adds regressions for hook discovery and timer cleanup and refreshes installation documentation for the published universal directory listing. The privacy boundary, production-only network destination, seat-scoped authentication, and tax eligibility disclaimers are unchanged.
 
+## v0.4.7 release notes
+
+Patch release for marketplace archive compatibility. v0.4.7 invokes the lifecycle handler through `bash` so tracking still starts when a directory package normalizes shell scripts to non-executable file permissions. It adds a regression fixture that reproduces the published `0644` file mode. The tracked events, privacy boundary, production-only destination, seat-scoped authentication, and tax eligibility disclaimers are unchanged.
+
 ## Final checks
 
 ```bash

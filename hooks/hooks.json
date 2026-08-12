@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$PLUGIN_ROOT/hooks/track-session.sh\" SessionStart"
+            "command": "bash \"$PLUGIN_ROOT/hooks/track-session.sh\" SessionStart"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$PLUGIN_ROOT/hooks/track-session.sh\" PostToolUse"
+            "command": "bash \"$PLUGIN_ROOT/hooks/track-session.sh\" PostToolUse"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$PLUGIN_ROOT/hooks/track-session.sh\" UserPromptSubmit"
+            "command": "bash \"$PLUGIN_ROOT/hooks/track-session.sh\" UserPromptSubmit"
           }
         ]
       }
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$PLUGIN_ROOT/hooks/track-session.sh\" Stop"
+            "command": "bash \"$PLUGIN_ROOT/hooks/track-session.sh\" Stop"
           }
         ]
       }

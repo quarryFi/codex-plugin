@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -25,6 +26,7 @@ const projectDir = join(projectRoot, "app");
 const configDir = join(tmpHome, ".quarryfi");
 const binDir = join(tmpHome, "bin");
 const captureDir = join(tmpHome, "captures");
+const packagedPluginRoot = join(tmpHome, "marketplace-package");
 
 assertSupportedCodexHooks();
 assertRootHookBundleIsDiscoverable();
@@ -85,6 +87,18 @@ try {
     assert.equal(request.payload.heartbeats[0].language, "typescript");
   }
 
+  clearCaptures();
+  installNonExecutableMarketplaceFixture();
+  runManifestHook({
+    eventName: "UserPromptSubmit",
+    cwd: join(projectRoot, "marketplace-app"),
+    sessionId: "marketplace-mode-session",
+    filePath: join(projectRoot, "marketplace-app", "package.json"),
+    pluginRoot: packagedPluginRoot,
+  });
+  requests = readCapturedRequests();
+  assert.equal(requests.length, 2, "marketplace hook must run when archive strips executable bits");
+
   assertIdleTimerExpires();
 
   console.log("Codex tracker privacy and lifecycle regression passed.");
@@ -136,11 +150,12 @@ function runHook(args) {
   });
 }
 
-function runManifestHook({ eventName, cwd, sessionId, filePath }) {
+function runManifestHook({ eventName, cwd, sessionId, filePath, pluginRoot = repoRoot }) {
   const command = hooksConfig.hooks[eventName][0].hooks[0].command;
+  mkdirSync(cwd, { recursive: true });
   execFileSync("bash", ["-c", command], {
     cwd,
-    env: testEnv(),
+    env: testEnv({ pluginRoot }),
     input: JSON.stringify({
       hook_event_name: eventName,
       cwd,
@@ -151,15 +166,26 @@ function runManifestHook({ eventName, cwd, sessionId, filePath }) {
   });
 }
 
-function testEnv() {
+function testEnv({ pluginRoot = repoRoot } = {}) {
   return {
     ...process.env,
     HOME: tmpHome,
     PATH: `${binDir}:${process.env.PATH}`,
     QF_CAPTURE_DIR: captureDir,
     CODEX_CLIENT: "app",
-    PLUGIN_ROOT: repoRoot,
+    PLUGIN_ROOT: pluginRoot,
   };
+}
+
+function installNonExecutableMarketplaceFixture() {
+  mkdirSync(join(packagedPluginRoot, "hooks"), { recursive: true });
+  mkdirSync(join(packagedPluginRoot, ".codex-plugin"), { recursive: true });
+  copyFileSync(hookPath, join(packagedPluginRoot, "hooks", "track-session.sh"));
+  copyFileSync(
+    join(repoRoot, ".codex-plugin", "plugin.json"),
+    join(packagedPluginRoot, ".codex-plugin", "plugin.json"),
+  );
+  chmodSync(join(packagedPluginRoot, "hooks", "track-session.sh"), 0o644);
 }
 
 function readCapturedRequests() {
@@ -240,7 +266,11 @@ function assertHookCommandsUsePluginRoot() {
   for (const [eventName, groups] of Object.entries(hooksConfig.hooks ?? {})) {
     for (const group of groups) {
       for (const hook of group.hooks ?? []) {
-        assert.match(hook.command, /^"\$PLUGIN_ROOT\/hooks\/track-session\.sh" /, `${eventName} must use PLUGIN_ROOT`);
+        assert.match(
+          hook.command,
+          /^bash "\$PLUGIN_ROOT\/hooks\/track-session\.sh" /,
+          `${eventName} must use PLUGIN_ROOT through bash`,
+        );
       }
     }
   }

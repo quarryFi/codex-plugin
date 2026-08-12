@@ -13,7 +13,7 @@ const statusSkill = read("skills/quarryfi-status/SKILL.md");
 const submission = read("docs/openai-directory-submission.md");
 
 assert.equal(manifest.name, "quarryfi-time-tracker");
-assert.equal(manifest.version, "0.4.6");
+assert.equal(manifest.version, "0.4.7");
 assert.equal("hooks" in manifest, false);
 assert.equal(existsSync(join(root, "hooks", "hooks.json")), true, "default hook bundle must exist");
 assert.equal(existsSync(join(root, "hooks.json")), false, "legacy root hook bundle must not be duplicated");
@@ -33,7 +33,17 @@ for (const assetPath of [manifest.interface.composerIcon, manifest.interface.log
 assert.equal(existsSync(join(root, "LICENSE")), true);
 assert.equal(existsSync(join(root, "SECURITY.md")), true);
 assert.ok((statSync(join(root, "setup.sh")).mode & 0o111) !== 0, "setup.sh must be executable");
-assert.ok((statSync(join(root, "hooks/track-session.sh")).mode & 0o111) !== 0, "hook must be executable");
+for (const groups of Object.values(JSON.parse(read("hooks/hooks.json")).hooks ?? {})) {
+  for (const group of groups) {
+    for (const registeredHook of group.hooks ?? []) {
+      assert.match(
+        registeredHook.command,
+        /^bash "\$PLUGIN_ROOT\/hooks\/track-session\.sh" /,
+        "marketplace hooks must tolerate archives that strip executable bits",
+      );
+    }
+  }
+}
 
 assert.match(hook, /normalize_api_url\(\)/);
 assert.match(hook, /echo "\$DEFAULT_API_URL"/);
