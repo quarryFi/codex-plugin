@@ -10,10 +10,11 @@ const manifest = JSON.parse(read(".codex-plugin/plugin.json"));
 const hook = read("hooks/track-session.sh");
 const setup = read("setup.sh");
 const statusSkill = read("skills/quarryfi-status/SKILL.md");
+const configureSkill = read("skills/quarryfi-configure/SKILL.md");
 const submission = read("docs/openai-directory-submission.md");
 
 assert.equal(manifest.name, "quarryfi-time-tracker");
-assert.equal(manifest.version, "0.4.7");
+assert.equal(manifest.version, "0.5.0");
 assert.equal("hooks" in manifest, false);
 assert.equal(existsSync(join(root, "hooks", "hooks.json")), true, "default hook bundle must exist");
 assert.equal(existsSync(join(root, "hooks.json")), false, "legacy root hook bundle must not be duplicated");
@@ -56,13 +57,16 @@ assert.match(setup, /chmod 700 "\$CONFIG_DIR"/);
 assert.match(setup, /chmod 600 "\$config_tmp"/);
 assert.match(statusSkill, /Do not use a configured `api_url` value/);
 assert.match(statusSkill, /Never ask the user to paste a tracker key into Codex/);
+assert.match(configureSkill, /Resolve the plugin root from this loaded skill's own location/);
+assert.match(configureSkill, /Do not assume the plugin lives at `~\/plugins\/quarryfi-time-tracker`/);
+assert.match(configureSkill, /Do not execute the interactive setup through a Codex tool/);
 
 const positiveBlock = submission.match(/## Positive review cases([\s\S]*?)## Negative review cases/)?.[1] ?? "";
 const negativeBlock = submission.match(/## Negative review cases([\s\S]*?)## Review fixture/)?.[1] ?? "";
 assert.equal((positiveBlock.match(/^\d+\./gm) ?? []).length, 5, "submission needs five positive cases");
 assert.equal((negativeBlock.match(/^\d+\./gm) ?? []).length, 3, "submission needs three negative cases");
 
-for (const contents of [manifest.description, manifest.interface.longDescription, hook, setup, statusSkill]) {
+for (const contents of [manifest.description, manifest.interface.longDescription, hook, setup, statusSkill, configureSkill]) {
   assert.ok(!contents.includes("quarryfi.smashedstudiosllc.workers.dev"));
 }
 

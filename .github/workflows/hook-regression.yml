@@ -24,5 +24,8 @@ jobs:
       - name: Run Codex hook regression
         run: node tests/hook-regression.mjs
 
+      - name: Preserve customer hook trust contract
+        run: node tests/hook-trust-contract.mjs
+
       - name: Check submission readiness
         run: node tests/submission-readiness.mjs

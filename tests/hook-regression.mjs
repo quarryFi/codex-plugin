@@ -279,7 +279,7 @@ function assertHookCommandsUsePluginRoot() {
 function assertProductionHostname() {
   const retiredHostname = "quarryfi.smashedstudiosllc.workers.dev";
   for (const relativePath of [
-    ".codex-plugin/plugin.json", "hooks/track-session.sh", "setup.sh", "skills/quarryfi-status/SKILL.md",
+    ".codex-plugin/plugin.json", "hooks/track-session.sh", "setup.sh", "skills/quarryfi-configure/SKILL.md", "skills/quarryfi-status/SKILL.md",
   ]) {
     const contents = readFileSync(join(repoRoot, relativePath), "utf8");
     assert.ok(!contents.includes(retiredHostname), `${relativePath} must not use the retired hostname`);

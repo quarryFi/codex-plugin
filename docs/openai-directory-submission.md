@@ -1,6 +1,6 @@
 # OpenAI universal Plugins Directory submission
 
-QuarryFi should be submitted as a **Skills only** plugin. The package contains two skills plus lifecycle hooks and does not include an MCP server.
+QuarryFi should be submitted as a **Skills only** plugin. The package contains three skills plus lifecycle hooks and does not include an MCP server.
 
 Official submission portal: <https://platform.openai.com/plugins>
 
@@ -60,6 +60,10 @@ Patch release for public lifecycle tracking. v0.4.6 packages the lifecycle defin
 ## v0.4.7 release notes
 
 Patch release for marketplace archive compatibility. v0.4.7 invokes the lifecycle handler through `bash` so tracking still starts when a directory package normalizes shell scripts to non-executable file permissions. It adds a regression fixture that reproduces the published `0644` file mode. The tracked events, privacy boundary, production-only destination, seat-scoped authentication, and tax eligibility disclaimers are unchanged.
+
+## v0.5.0 release notes
+
+Adds a secret-safe configure skill that resolves the setup script from the active public directory package, so customers no longer need a GitHub clone or a guessed cache path. The status skill now distinguishes public and development installs and gives explicit hook-trust recovery guidance without recommending reinstall. A frozen hook-definition contract prevents ordinary releases from unexpectedly triggering new trust prompts. Heartbeat fields, privacy boundaries, production routing, and existing hook commands are unchanged.
 
 ## Final checks
 

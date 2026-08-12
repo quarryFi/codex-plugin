@@ -16,7 +16,7 @@ QuarryFi is published in the universal Plugins Directory shared by ChatGPT and C
 2. Search for **QuarryFi R&D Tracker**, open it, and select the plus button to install it.
 3. Start a new Codex task or CLI session so the installed version is loaded.
 4. Review and trust the four QuarryFi lifecycle hooks when prompted. In Codex CLI, use `/hooks` if the prompt was dismissed.
-5. Configure a seat-assigned key using [Quick Setup](#quick-setup).
+5. Ask Codex to **"Help me configure QuarryFi tracking"**. The included configure skill resolves the installed public package and gives you one exact setup command to run in a regular terminal.
 6. Ask Codex to "Check my QuarryFi R&D tracking status" and confirm Codex reports `receiving`.
 
 You can enable/disable the plugin at any time from the plugin directory. Codex stores your preference in `~/.codex/config.toml`.
@@ -135,12 +135,20 @@ This plugin shares `~/.quarryfi/config.json` with the Claude Code plugin. If you
 
 ### Quick Setup
 
+For a public directory install, ask Codex:
+
+> "Help me configure QuarryFi tracking"
+
+The included `quarryfi-configure` skill resolves the active versioned package and gives you an exact `bash "<PLUGIN_ROOT>/setup.sh"` command. Run that command in a regular terminal so the seat key stays out of the Codex conversation.
+
+For a GitHub development install at the conventional home-local path:
+
 ```bash
 cd ~/plugins/quarryfi-time-tracker
 bash setup.sh
 ```
 
-The setup wizard hides key input and writes an owner-only local config. You'll need a seat-assigned API key from **Tracking integrations and API keys** on your [QuarryFi Workspace dashboard](https://quarryfi.com/dashboard/team#tracking-plugins). Run setup in a regular terminal; do not paste the key into a Codex conversation.
+The setup wizard hides key input and writes an owner-only local config. Contributors create their own seat key from the one-time QuarryFi invitation sent to their email. Company owners configuring their own seat can create an owner key under **People → Tracking integrations and API keys** on the [QuarryFi Workspace dashboard](https://quarryfi.com/dashboard/team#tracking-plugins). Run setup in a regular terminal; do not paste the key into a Codex conversation.
 
 Tracker keys and accepted heartbeats require an active QuarryFi Core subscription. You can create and explore a Free account before upgrading, but Free accounts cannot generate new tracker keys.
 
@@ -275,6 +283,12 @@ Codex hook trust is hash-based. If the plugin updates its hook file, Codex can s
 
 ## Skills
 
+### quarryfi-configure
+
+Safely resolves the setup script for either a public directory install or a GitHub development install, then gives the user an exact terminal command. It never requests or handles a tracker key inside the Codex conversation.
+
+> "Help me configure QuarryFi tracking"
+
 ### quarryfi-status
 
 Check your tracking status from within Codex:
@@ -283,7 +297,7 @@ Check your tracking status from within Codex:
 
 Shows all configured profiles, matched projects, seat-scoped tracking stats from QuarryFi, the local installed plugin version, and whether any hook fired in the current session.
 
-If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.4.6` or newer.
+If QuarryFi shows Codex as `stale` while Claude Code is active, update this plugin, restart Codex, review/trust updated hooks if prompted, then run the status check again after a new Codex action. A healthy Codex status should show source `codex`, a recent `lastHeartbeatAt`, and plugin version `0.5.0` or newer.
 
 ### quarryfi-update
 
@@ -328,6 +342,8 @@ codex-plugin/
 ├── hooks/
 │   └── track-session.sh     # Lifecycle event handler (multi-profile)
 ├── skills/
+│   ├── quarryfi-configure/
+│   │   └── SKILL.md          # Secret-safe public-install setup
 │   ├── quarryfi-status/
 │   │   └── SKILL.md          # Status check skill
 │   └── quarryfi-update/

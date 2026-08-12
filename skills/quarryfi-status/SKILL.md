@@ -7,9 +7,9 @@ Show the user's QuarryFi tracking status across all configured profiles, plus th
 
 ## What to do
 
-1. Read `~/.quarryfi/config.json` without displaying any full `api_key`. If it doesn't exist, tell the user to run setup from the verified source clone in a regular terminal, not in the Codex conversation:
+1. Read `~/.quarryfi/config.json` without displaying any full `api_key`. If it doesn't exist, invoke the `quarryfi-configure` guidance. Resolve the setup script from the installed skill's plugin root and tell the user to run that exact command in a regular terminal, not in the Codex conversation:
    ```
-   cd ~/plugins/quarryfi-time-tracker && bash setup.sh
+   bash "<PLUGIN_ROOT>/setup.sh"
    ```
    Never ask the user to paste a tracker key into Codex, and never invent a credential.
 
@@ -24,9 +24,7 @@ Show the user's QuarryFi tracking status across all configured profiles, plus th
    - Mapped project directories (or "all projects" if empty)
    - Whether the current working directory matches this profile
 
-4. Read the local plugin version:
-   - Check `~/plugins/quarryfi-time-tracker/.codex-plugin/plugin.json` first
-   - If the plugin is installed elsewhere, read the version from that install's `.codex-plugin/plugin.json`
+4. Read the local plugin version from the plugin root that supplied this skill. If that cannot be resolved, search installed plugin manifests by name. Report whether the path is a public `openai-curated-remote` install or a development/personal install. Never mutate Codex's managed cache.
 
 5. For each profile, query only QuarryFi's production status endpoint. Do not use a configured `api_url` value:
    ```bash
@@ -52,6 +50,7 @@ Show the user's QuarryFi tracking status across all configured profiles, plus th
    - Show the count of recent entries and last heartbeat timestamp
    - Specifically note whether there is any `hook_fired` entry from the current session/day
    - If the user asks for details, show the last 10 lines of the audit log
+   - If there is no `hook_fired` entry for the current task/day despite a valid config, report that lifecycle hooks may be untrusted or inactive. Check `~/.codex/config.toml` only for the presence of four QuarryFi hook trust-state entries; never edit the file. Direct Codex CLI users to `/hooks` and Codex App users to Hooks settings. A missing or stale trust state is not a reason to reinstall the plugin.
 
 9. If any API returns an error, show the HTTP status and suggest verifying the API key.
 10. Tell the user the dashboard remains the source of truth for deduped activity blocks and qualification review. Tracker activity is supporting evidence, not a determination of tax-credit eligibility or tax advice.

@@ -9,6 +9,7 @@ QuarryFi privacy-minimized activity tracker for OpenAI Codex (CLI and App). Send
 - `.codex-plugin/plugin.json` — Codex plugin manifest (name: `quarryfi-time-tracker`)
 - `hooks/track-session.sh` — Shared lifecycle hook for SessionStart, PostToolUse, UserPromptSubmit, and Stop
 - `skills/quarryfi-status/SKILL.md` — Status check skill
+- `skills/quarryfi-configure/SKILL.md` — Secret-safe public-install setup guidance
 - `skills/quarryfi-update/SKILL.md` — Self-update skill (git pull from inside Codex)
 - `setup.sh` — Interactive multi-profile config setup
 
@@ -83,5 +84,6 @@ Current version: see `.codex-plugin/plugin.json`
 
 - `bash -n hooks/track-session.sh` — syntax check
 - `bash -n setup.sh` — syntax check
+- `node tests/hook-trust-contract.mjs` — fail if customer-visible hook definitions drift
 - Test verify_key by running `setup.sh` with a real key — must get HTTP 200, not 400
 - Manual smoke: run the hook directly with CLI args and with JSON stdin, then confirm `~/.quarryfi/audit.log` records `hook_fired`
